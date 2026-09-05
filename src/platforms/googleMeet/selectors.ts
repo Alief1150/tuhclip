@@ -1,15 +1,21 @@
 const REGION_SELECTORS = [
   '[data-caption-region]',
   '[data-subtitle-region]',
+  '[role="region"][aria-label]',
+  '[jsname="tgaKEf"]',
+  '[jsname="YSxPC"]',
   '[role="region"]',
   '[aria-live="polite"]',
   '[aria-live="assertive"]',
 ] as const;
 
+const MEET_ROW_SELECTOR = 'div[jsname="dsyhDe"],div.CNusmb,div.TBMuR,.nMcdL';
+
 export const CAPTION_BLOCK_SELECTOR = [
   '[data-is-caption="true"]',
   '[data-caption-id]',
   '[data-caption-text]',
+  MEET_ROW_SELECTOR,
   '[role="listitem"]',
 ].join(',');
 
@@ -17,17 +23,26 @@ export const SPEAKER_SELECTOR = [
   '[data-speaker-name]',
   '[data-participant-name]',
   '[data-self-name]',
+  '.NWpY1d',
+  'div.KcIKyf',
+  'div.zs7s8d',
   '[role="heading"]',
 ].join(',');
 
 export const CAPTION_TEXT_SELECTOR = [
   '[data-caption-text]',
   '[data-is-caption-text="true"]',
+  '.ygicle',
+  '.VbkSUe',
+  'div.bh44bd',
+  'div.iTTPOb',
+  'span[jsname="tgaKEf"]',
   '[role="paragraph"]',
 ].join(',');
 
-const captionWords = /caption|subtitle|transcript/i;
+const captionWords = /caption|subtitle|transcript|sous-titre|untertitel|leyenda|字幕/i;
 const excludedWords = /chat|participant|notification/i;
+const MEET_REGION_JSNAMES = new Set(['tgaKEf', 'YSxPC']);
 
 function accessibleName(element: Element): string {
   return [
@@ -42,7 +57,10 @@ export function isCaptionRegionCandidate(candidate: Element): boolean {
   if (excludedWords.test(name)) return false;
   if (candidate.hasAttribute('data-caption-region') || candidate.hasAttribute('data-subtitle-region')) return true;
   if (captionWords.test(name)) return true;
-  return Boolean(candidate.getAttribute('aria-live') && candidate.querySelector('[data-is-caption="true"],[data-caption-id],[data-caption-text]'));
+  const jsname = candidate.getAttribute('jsname');
+  if (jsname && MEET_REGION_JSNAMES.has(jsname)) return true;
+  if (candidate.getAttribute('aria-live') && candidate.querySelector('[data-is-caption="true"],[data-caption-id],[data-caption-text]')) return true;
+  return Boolean(candidate.querySelector(MEET_ROW_SELECTOR));
 }
 
 export function containsCaptionRegionCandidate(node: Node): boolean {

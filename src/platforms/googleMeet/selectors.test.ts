@@ -67,6 +67,45 @@ describe('Google Meet selectors', () => {
     }]);
   });
 
+  it('finds the real Meet caption shape: jsname region with class-based rows', () => {
+    const row = new TestElement('div', { class: 'nMcdL bj4p3b' }).append(
+      new TestElement('div', { class: 'NWpY1d' }, 'You'),
+      new TestElement('div', { class: 'ygicle VbkSUe' }, 'cek cek halo semuanya'),
+    );
+    const region = new TestElement('div', { jsname: 'tgaKEf' }).append(row);
+    const root = new TestElement('main').append(region);
+
+    const found = findCaptionRegion(asRoot(root));
+    expect(found).toBe(asElement(region));
+    const observations = found
+      ? findCaptionBlocks(found).map((block) => parseCaptionBlock(block, 100)).filter(Boolean)
+      : [];
+    expect(observations).toEqual([{
+      speaker: 'You',
+      text: 'cek cek halo semuanya',
+      observedAt: 100,
+    }]);
+  });
+
+  it('finds Meet rows by jsname with speaker and text spans', () => {
+    const row = new TestElement('div', { jsname: 'dsyhDe' }).append(
+      new TestElement('div', { class: 'KcIKyf' }, 'Alief'),
+      new TestElement('div', { class: 'bh44bd' }, 'Halo semuanya'),
+    );
+    const region = new TestElement('div', { role: 'region', 'aria-label': 'Captions' }).append(row);
+    const root = new TestElement('main').append(region);
+
+    const found = findCaptionRegion(asRoot(root));
+    const observations = found
+      ? findCaptionBlocks(found).map((block) => parseCaptionBlock(block, 100)).filter(Boolean)
+      : [];
+    expect(observations).toEqual([{
+      speaker: 'Alief',
+      text: 'Halo semuanya',
+      observedAt: 100,
+    }]);
+  });
+
   it.each([
     ['hidden', ''],
     ['inert', ''],
