@@ -158,9 +158,16 @@ Phase 2: Google Meet Caption Capture, complete. Manual verification remains pend
 - Hygiene: `.gitignore` covers `node_modules/` and `dist/`; no `.env`; no secrets found by pattern scan; `tuhclip-agent-plan.zip` is the user-supplied plan archive and stays.
 - Wrote `FINAL_CHECK.md`: PASS.
 
+## Phase 7 exact checks and results
+
+- `gh auth status`: logged in as Alief1150 with `repo` scope.
+- `gh repo view alief1150/tuhclip`: did not exist; created private via `gh repo create alief1150/tuhclip --private --source=. --remote=origin --push`. No unrelated repository was touched.
+- Final MVP commit `509fefa` pushed on `implementation/tuhclip-mvp` tracking `origin/implementation/tuhclip-mvp`.
+- `gh repo view alief1150/tuhclip --web=false`: verified repository exists with the pushed branch and README rendering.
+- Updated `FINAL_CHECK.md` with repository, remote URL, branch, commit hash, and `dist/` build folder.
+
 ## Remaining work
 
-- Phase 7: Git finalization and GitHub publish.
 - Manual follow-ups requiring a live browser: real Google Meet caption verification, side-panel open-late/close/reopen walkthrough, and content-script/service-worker/side-panel console review.
 - Phase 4: IndexedDB persistence, meeting history, transcript UI, and exports.
 - Phase 5 and Phase 6: integration testing, hardening, real unpacked-extension browser verification, and final cross-check.
