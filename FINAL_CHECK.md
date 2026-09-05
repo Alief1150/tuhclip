@@ -57,5 +57,6 @@ exactly `https://meet.google.com/*`, minimum Chrome 116.
 - Repository: alief1150/tuhclip (private).
 - Remote URL: https://github.com/Alief1150/tuhclip.git
 - Branch: implementation/tuhclip-mvp tracking origin/implementation/tuhclip-mvp.
-- Final commit hash: 509fefa (feat: build tuhclip Google Meet transcript MVP).
+- MVP commit hash: 509fefa (feat: build tuhclip Google Meet transcript MVP).
+- Latest commit hash: 3388129 (docs: record tuhclip release state).
 - Build folder to load in Chrome: `dist/`.
