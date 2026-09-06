@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.1] - 2026-09-06
+## [0.3.1] - 2026-09-06
 
 ### Added
 - GitHub Actions CI validation on push and pull request
