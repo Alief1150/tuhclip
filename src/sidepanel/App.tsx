@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { DownloadIcon } from 'lucide-react';
 import { toJSON } from '../export/json';
 import { toMarkdown } from '../export/markdown';
 import { toText } from '../export/text';
@@ -7,43 +8,19 @@ import { createLogger } from '../shared/logger';
 import { createMeeting, endMeeting, listMeetings, meetingTitleFallback, type MeetingHistoryEntry, type MeetingSession } from '../storage/meetings';
 import { addSegment, listSegments } from '../storage/segments';
 import type { TranscriptSegment } from '../transcript/types';
-import { deriveViewState, type ViewState } from './viewState';
+import { deriveViewState } from './viewState';
 import { createSequentialPoll } from './poll';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../ui/empty';
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from '../ui/menu';
+import { ScrollArea } from '../ui/scroll-area';
+import { Separator } from '../ui/separator';
+import { Spinner } from '../ui/spinner';
+import { Tabs, TabsList, TabsPanel, TabsTab } from '../ui/tabs';
+import { ToastProvider, toastManager } from '../ui/toast';
 
 const logger = createLogger('ui');
-
-const stateCopy: Record<ViewState, { eyebrow: string; title: string; body: string; hint: string }> = {
-  'not-on-meet': {
-    eyebrow: 'No meeting found',
-    title: 'Open a Google Meet tab',
-    body: 'tuhclip reads captions from the active Google Meet tab.',
-    hint: 'Your transcript stays in this browser.',
-  },
-  'meet-detected': {
-    eyebrow: 'Meet detected',
-    title: 'Connecting to the meeting',
-    body: 'The page connection is being prepared.',
-    hint: 'This usually finishes when the Meet page is ready.',
-  },
-  'captions-off': {
-    eyebrow: 'Waiting for captions',
-    title: 'Turn on Meet captions',
-    body: 'Use the captions button in Google Meet. tuhclip will listen once text appears.',
-    hint: 'No microphone or audio permission is used.',
-  },
-  transcribing: {
-    eyebrow: 'Captions active',
-    title: 'Transcript in progress',
-    body: 'Spoken captions appear below as they are finalized.',
-    hint: 'Keep Google Meet captions turned on.',
-  },
-  idle: {
-    eyebrow: 'Meeting idle',
-    title: 'No new caption text',
-    body: 'The meeting may have ended or paused. Existing transcript text is kept locally.',
-    hint: 'Return to the meeting to continue.',
-  },
-};
 
 async function fetchSignals(): Promise<SessionSignals> {
   const response: unknown = await chrome.runtime.sendMessage({ type: 'GET_SESSION_STATUS' } satisfies RuntimeMessage);
@@ -79,10 +56,66 @@ function formatDuration(durationMs?: number): string {
   return `${minutes} min`;
 }
 
+function StatusBadge({ state }: { state: 'transcribing' | 'waiting' | 'connecting' | 'reconnecting' | 'idle' }) {
+  if (state === 'transcribing') {
+    return (
+      <Badge variant="success">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-success-foreground" />
+        Transcribing
+      </Badge>
+    );
+  }
+  if (state === 'waiting') {
+    return (
+      <Badge variant="warning">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-warning-foreground" />
+        Waiting for captions
+      </Badge>
+    );
+  }
+  if (state === 'reconnecting') {
+    return (
+      <Badge variant="error">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-destructive-foreground" />
+        Reconnecting
+      </Badge>
+    );
+  }
+  if (state === 'idle') {
+    return <Badge variant="secondary">Idle</Badge>;
+  }
+  return (
+    <Badge variant="secondary">
+      <Spinner className="size-3" />
+      Connecting
+    </Badge>
+  );
+}
+
+function ExportMenu({ label, onExport }: { label: string; onExport: (format: 'txt' | 'md' | 'json') => void }) {
+  return (
+    <Menu>
+      <MenuTrigger
+        render={
+          <Button variant="outline" size="sm" aria-label={label}>
+            <DownloadIcon aria-hidden="true" />
+            Export
+          </Button>
+        }
+      />
+      <MenuPopup>
+        <MenuItem onClick={() => onExport('txt')}>Export TXT</MenuItem>
+        <MenuItem onClick={() => onExport('md')}>Export Markdown</MenuItem>
+        <MenuItem onClick={() => onExport('json')}>Export JSON</MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 export function App() {
   const [signals, setSignals] = useState<SessionSignals | null>(null);
   const [error, setError] = useState(false);
-  const [tab, setTab] = useState<'live' | 'history'>('live');
+  const [tab, setTab] = useState('live');
   const [meeting, setMeeting] = useState<MeetingSession | null>(null);
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [activeCaption, setActiveCaption] = useState<{ speaker: string; text: string } | null>(null);
@@ -193,163 +226,228 @@ export function App() {
     }
   }, []);
 
+  const exportWithToast = useCallback((filename: string, render: () => string, mime: string) => {
+    try {
+      download(filename, render(), mime);
+      toastManager.add({ title: 'Export saved', description: filename, type: 'success' });
+    } catch (cause) {
+      logger.error('Export failed', cause);
+      toastManager.add({ title: 'Export failed', description: 'Could not write the file.', type: 'error' });
+    }
+  }, []);
+
   const exportCurrent = useCallback((format: 'txt' | 'md' | 'json') => {
     if (!meeting) return;
     const slug = meeting.id.replace(/[^a-z0-9]+/gi, '-');
-    if (format === 'txt') download(`${slug}.txt`, toText(meeting, segments), 'text/plain');
-    else if (format === 'md') download(`${slug}.md`, toMarkdown(meeting, segments), 'text/markdown');
-    else download(`${slug}.json`, toJSON(meeting, segments), 'application/json');
-  }, [meeting, segments]);
+    if (format === 'txt') exportWithToast(`${slug}.txt`, () => toText(meeting, segments), 'text/plain');
+    else if (format === 'md') exportWithToast(`${slug}.md`, () => toMarkdown(meeting, segments), 'text/markdown');
+    else exportWithToast(`${slug}.json`, () => toJSON(meeting, segments), 'application/json');
+  }, [meeting, segments, exportWithToast]);
 
   const exportViewing = useCallback((format: 'txt' | 'md' | 'json') => {
     if (!viewing) return;
     const slug = viewing.meeting.id.replace(/[^a-z0-9]+/gi, '-');
-    if (format === 'txt') download(`${slug}.txt`, toText(viewing.meeting, viewing.segments), 'text/plain');
-    else if (format === 'md') download(`${slug}.md`, toMarkdown(viewing.meeting, viewing.segments), 'text/markdown');
-    else download(`${slug}.json`, toJSON(viewing.meeting, viewing.segments), 'application/json');
-  }, [viewing]);
+    if (format === 'txt') exportWithToast(`${slug}.txt`, () => toText(viewing.meeting, viewing.segments), 'text/plain');
+    else if (format === 'md') exportWithToast(`${slug}.md`, () => toMarkdown(viewing.meeting, viewing.segments), 'text/markdown');
+    else exportWithToast(`${slug}.json`, () => toJSON(viewing.meeting, viewing.segments), 'application/json');
+  }, [viewing, exportWithToast]);
 
   const state = signals ? deriveViewState(signals) : null;
-  const copy = state ? stateCopy[state] : null;
+  const hasTranscript = segments.length > 0 || activeCaption !== null;
+
+  const statusBadge = (() => {
+    if (!signals || error) return <StatusBadge state="connecting" />;
+    if (signals.contentMissing) return <StatusBadge state="reconnecting" />;
+    if (!signals.contentReady) return <StatusBadge state="connecting" />;
+    if (state === 'transcribing' || hasTranscript) return <StatusBadge state="transcribing" />;
+    if (state === 'idle') return <StatusBadge state="idle" />;
+    return <StatusBadge state="waiting" />;
+  })();
 
   return (
-    <main className="shell">
-      <header className="masthead">
-        <div className="brand">
-          <img src="/paperclip.png" alt="" className="brand-mark" />
-          <span>tuhclip</span>
-        </div>
-        <span className="local-note">local only</span>
-      </header>
+    <ToastProvider position="bottom-center">
+      <main className="flex min-h-dvh flex-col gap-3 bg-muted p-3">
+        <header className="sticky top-0 z-10 flex items-center justify-between rounded-lg border bg-background px-3 py-2 shadow-xs">
+          <div className="flex items-center gap-2">
+            <img src="/paperclip.png" alt="" className="size-6 object-contain" />
+            <span className="font-heading text-base font-bold tracking-tight">tuhclip</span>
+          </div>
+          <Badge variant="outline" size="sm">local only</Badge>
+        </header>
 
-      <nav className="tabs" aria-label="tuhclip sections">
-        <button type="button" className={tab === 'live' ? 'tab-active' : ''} aria-current={tab === 'live' ? 'page' : undefined} onClick={() => setTab('live')}>Live</button>
-        <button type="button" className={tab === 'history' ? 'tab-active' : ''} aria-current={tab === 'history' ? 'page' : undefined} onClick={() => { setTab('history'); void refreshHistory(); }}>History</button>
-      </nav>
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className="w-full">
+            <TabsTab value="live" className="flex-1">Live</TabsTab>
+            <TabsTab value="history" className="flex-1">History</TabsTab>
+          </TabsList>
 
-      {tab === 'live' ? (
-        <section className="document" aria-live="polite" aria-busy={!signals && !error}>
-          <div className="document-rule" />
-          {error ? (
-            <div className="state-content">
-              <p className="eyebrow error-label">Connection error</p>
-              <h1>Could not read this tab</h1>
-              <p>Chrome did not return the meeting status. Check the active tab, then retry.</p>
-              <button type="button" onClick={() => retry.current()}>Check active tab</button>
-            </div>
-          ) : !copy ? (
-            <div className="state-content loading">
-              <p className="eyebrow">Checking active tab</p>
-              <h1>Finding your meeting</h1>
-              <p>Reading the current Chrome tab.</p>
-            </div>
-          ) : state !== 'transcribing' && segments.length === 0 ? (
-            <div className="state-content">
-              <p className="eyebrow"><span className={`status-dot status-${state}`} />{copy.eyebrow}</p>
-              <h1>{copy.title}</h1>
-              <p>{copy.body}</p>
-              <p className="hint">{copy.hint}</p>
-              {(state === 'not-on-meet' || state === 'meet-detected') && (
-                <button type="button" onClick={() => retry.current()}>Check active tab</button>
-              )}
-            </div>
-          ) : (
-            <div className="transcript">
-              <p className="eyebrow"><span className={`status-dot status-${state}`} />{meeting?.title ?? copy.eyebrow}</p>
-              {activeCaption && (
-                <div className="segment segment-active" aria-label="Current caption">
-                  <p className="segment-meta">{formatTime(Date.now())} {activeCaption.speaker}</p>
-                  <p className="segment-text">{activeCaption.text}</p>
-                </div>
-              )}
-              {segments.length === 0 && !activeCaption ? (
-                <div className="state-content">
-                  <h1>Listening</h1>
-                  <p>Finalized captions will appear here. Keep Google Meet captions turned on.</p>
-                </div>
+          <TabsPanel value="live" className="min-h-0">
+            <section aria-live="polite" className="flex min-h-0 flex-col gap-2 rounded-lg border bg-background p-3 shadow-xs">
+              <div className="flex items-center justify-between gap-2">
+                {statusBadge}
+                {meeting && segments.length > 0 && (
+                  <ExportMenu label="Export current transcript" onExport={exportCurrent} />
+                )}
+              </div>
+
+              {error ? (
+                <Empty className="py-8">
+                  <EmptyHeader>
+                    <EmptyTitle>Could not read this tab</EmptyTitle>
+                    <EmptyDescription>Chrome did not return the meeting status. Check the active tab, then retry.</EmptyDescription>
+                  </EmptyHeader>
+                  <Button size="sm" onClick={() => retry.current()}>Check active tab</Button>
+                </Empty>
+              ) : !signals ? (
+                <Empty className="py-8">
+                  <EmptyHeader>
+                    <Spinner className="mb-2" />
+                    <EmptyTitle>Finding your meeting</EmptyTitle>
+                    <EmptyDescription>Reading the current Chrome tab.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : signals.contentMissing ? (
+                <Empty className="py-8">
+                  <EmptyHeader>
+                    <EmptyTitle>Meet tab needs a refresh</EmptyTitle>
+                    <EmptyDescription>
+                      This Meet tab opened before tuhclip could attach. Automatic reconnect did not succeed, so refresh the Meet tab once and reopen this panel.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <Button size="sm" onClick={() => retry.current()}>Retry connection</Button>
+                </Empty>
+              ) : state === 'not-on-meet' ? (
+                <Empty className="py-8">
+                  <EmptyHeader>
+                    <EmptyTitle>Open a Google Meet tab</EmptyTitle>
+                    <EmptyDescription>tuhclip reads captions from the active Google Meet tab. Your transcript stays in this browser.</EmptyDescription>
+                  </EmptyHeader>
+                  <Button size="sm" onClick={() => retry.current()}>Check active tab</Button>
+                </Empty>
+              ) : state === 'meet-detected' ? (
+                <Empty className="py-8">
+                  <EmptyHeader>
+                    <Spinner className="mb-2" />
+                    <EmptyTitle>Connecting to the meeting</EmptyTitle>
+                    <EmptyDescription>The page connection is being prepared. This usually finishes when the Meet page is ready.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : !hasTranscript ? (
+                <Empty className="py-8">
+                  <EmptyHeader>
+                    <EmptyTitle>{state === 'idle' ? 'No new caption text' : 'Turn on Meet captions'}</EmptyTitle>
+                    <EmptyDescription>
+                      {state === 'idle'
+                        ? 'The meeting may have ended or paused. Existing transcript text is kept locally.'
+                        : 'Use the captions button in Google Meet. tuhclip will listen once text appears. No microphone or audio permission is used.'}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               ) : (
-                <ol className="segment-list">
-                  {segments.map((segment) => (
-                    <li key={segment.id} className="segment">
-                      <p className="segment-meta">{formatTime(segment.startedAt)} {segment.speaker}</p>
-                      <p className="segment-text">{segment.text}</p>
-                    </li>
-                  ))}
-                </ol>
+                <ScrollArea className="max-h-[55dvh]">
+                  <ol className="flex flex-col">
+                    {segments.map((segment) => (
+                      <li key={segment.id} className="border-t border-border py-2 first:border-t-0 first:pt-0">
+                        <p className="text-xs font-semibold text-primary">
+                          {formatTime(segment.startedAt)} {segment.speaker}
+                        </p>
+                        <p className="text-sm leading-relaxed text-foreground">{segment.text}</p>
+                      </li>
+                    ))}
+                    {activeCaption && (
+                      <li aria-label="Current caption" className="mt-1 rounded-md border border-dashed border-primary bg-accent/60 px-2 py-2">
+                        <p className="text-xs font-semibold text-primary">
+                          {activeCaption.speaker} <span className="font-normal text-muted-foreground">speaking</span>
+                        </p>
+                        <p className="text-sm leading-relaxed text-foreground">{activeCaption.text}</p>
+                      </li>
+                    )}
+                  </ol>
+                </ScrollArea>
               )}
-              {meeting && segments.length > 0 && (
-                <div className="export-row" role="group" aria-label="Export current transcript">
-                  <button type="button" onClick={() => exportCurrent('txt')}>Save TXT</button>
-                  <button type="button" onClick={() => exportCurrent('md')}>Save MD</button>
-                  <button type="button" onClick={() => exportCurrent('json')}>Save JSON</button>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-      ) : viewing ? (
-        <section className="document">
-          <div className="document-rule" />
-          <div className="transcript">
-            <p className="eyebrow">Saved transcript</p>
-            <h1>{viewing.meeting.title}</h1>
-            <p className="hint">{new Date(viewing.meeting.startedAt).toLocaleString()} {formatDuration(viewing.meeting.durationMs)} {viewing.segments.length} lines</p>
-            {viewing.segments.length === 0 ? (
-              <p>No segments were recorded for this meeting.</p>
-            ) : (
-              <ol className="segment-list">
-                {viewing.segments.map((segment) => (
-                  <li key={segment.id} className="segment">
-                    <p className="segment-meta">{formatTime(segment.startedAt)} {segment.speaker}</p>
-                    <p className="segment-text">{segment.text}</p>
-                  </li>
-                ))}
-              </ol>
-            )}
-            <div className="export-row" role="group" aria-label="Export saved transcript">
-              <button type="button" onClick={() => exportViewing('txt')}>Save TXT</button>
-              <button type="button" onClick={() => exportViewing('md')}>Save MD</button>
-              <button type="button" onClick={() => exportViewing('json')}>Save JSON</button>
-              <button type="button" onClick={() => setViewing(null)}>Back to list</button>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="document" aria-live="polite">
-          <div className="document-rule" />
-          <div className="transcript">
-            <p className="eyebrow">Meeting history</p>
-            {historyError ? (
-              <div className="state-content">
-                <h1>History unavailable</h1>
-                <p>Stored meetings could not be read. Your data stays in this browser.</p>
-                <button type="button" onClick={() => void refreshHistory()}>Retry history</button>
-              </div>
-            ) : history.length === 0 ? (
-              <div className="state-content">
-                <h1>No meetings yet</h1>
-                <p>Finalized transcripts appear here after your first captioned meeting.</p>
-              </div>
-            ) : (
-              <ol className="history-list">
-                {history.map((entry) => (
-                  <li key={entry.id}>
-                    <button type="button" className="history-item" onClick={() => void openHistoryEntry(entry)}>
-                      <span className="history-title">{entry.title}</span>
-                      <span className="history-meta">{new Date(entry.startedAt).toLocaleString()} {formatDuration(entry.durationMs)} {entry.segmentCount} lines</span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        </section>
-      )}
+            </section>
+          </TabsPanel>
 
-      <footer>
-        <span>tuhclip</span>
-        <span>Google Meet</span>
-      </footer>
-    </main>
+          <TabsPanel value="history" className="min-h-0">
+            <section aria-live="polite" className="flex min-h-0 flex-col gap-2 rounded-lg border bg-background p-3 shadow-xs">
+              {viewing ? (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <h1 className="truncate text-sm font-bold">{viewing.meeting.title}</h1>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(viewing.meeting.startedAt).toLocaleString()} {formatDuration(viewing.meeting.durationMs)} {viewing.segments.length} lines
+                      </p>
+                    </div>
+                    <ExportMenu label="Export saved transcript" onExport={exportViewing} />
+                  </div>
+                  <Separator />
+                  {viewing.segments.length === 0 ? (
+                    <Empty className="py-6">
+                      <EmptyHeader>
+                        <EmptyDescription>No segments were recorded for this meeting.</EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  ) : (
+                    <ScrollArea className="max-h-[50dvh]">
+                      <ol className="flex flex-col">
+                        {viewing.segments.map((segment) => (
+                          <li key={segment.id} className="border-t border-border py-2 first:border-t-0 first:pt-0">
+                            <p className="text-xs font-semibold text-primary">
+                              {formatTime(segment.startedAt)} {segment.speaker}
+                            </p>
+                            <p className="text-sm leading-relaxed text-foreground">{segment.text}</p>
+                          </li>
+                        ))}
+                      </ol>
+                    </ScrollArea>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => setViewing(null)}>Back to list</Button>
+                </>
+              ) : historyError ? (
+                <Empty className="py-8">
+                  <EmptyHeader>
+                    <EmptyTitle>History unavailable</EmptyTitle>
+                    <EmptyDescription>Stored meetings could not be read. Your data stays in this browser.</EmptyDescription>
+                  </EmptyHeader>
+                  <Button size="sm" onClick={() => void refreshHistory()}>Retry history</Button>
+                </Empty>
+              ) : history.length === 0 ? (
+                <Empty className="py-8">
+                  <EmptyHeader>
+                    <EmptyTitle>No meetings yet</EmptyTitle>
+                    <EmptyDescription>Finalized transcripts appear here after your first captioned meeting.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                <ScrollArea className="max-h-[60dvh]">
+                  <ol className="flex flex-col gap-1.5">
+                    {history.map((entry) => (
+                      <li key={entry.id}>
+                        <button
+                          type="button"
+                          onClick={() => void openHistoryEntry(entry)}
+                          className="flex w-full min-h-11 cursor-pointer flex-col gap-0.5 rounded-md border border-border bg-background px-2.5 py-2 text-left outline-none transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <span className="truncate text-sm font-semibold">{entry.title}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(entry.startedAt).toLocaleString()} {formatDuration(entry.durationMs)} {entry.segmentCount} lines
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                </ScrollArea>
+              )}
+            </section>
+          </TabsPanel>
+        </Tabs>
+
+        <footer className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+          <span>tuhclip</span>
+          <span>Google Meet</span>
+        </footer>
+      </main>
+    </ToastProvider>
   );
 }

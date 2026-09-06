@@ -11,6 +11,14 @@ describe('shouldRelayToExtension', () => {
     )).toBe(true),
   );
 
+  it('relays the content-script handshake from the active Meet tab', () => {
+    expect(shouldRelayToExtension(
+      { type: 'CONTENT_SCRIPT_READY', payload: { meetCode: 'abc-defg-hij', url: 'https://meet.google.com/abc-defg-hij', startedAt: 1 } },
+      { id: 7, url: 'https://meet.google.com/abc-defg-hij' },
+      { id: 7, url: 'https://meet.google.com/abc-defg-hij' },
+    )).toBe(true);
+  });
+
   it('does not relay observations or messages from extension pages', () => {
     expect(shouldRelayToExtension({ type: 'CAPTION_OBSERVATION', payload: { speaker: 'Ada', text: 'Hi', observedAt: 1 } }, { id: 7, url: 'https://meet.google.com/a' }, { id: 7, url: 'https://meet.google.com/a' })).toBe(false);
     expect(shouldRelayToExtension({ type: 'CAPTIONS_ACTIVE' }, {}, { id: 7, url: 'https://meet.google.com/a' })).toBe(false);

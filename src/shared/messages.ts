@@ -1,6 +1,7 @@
 export type SessionSignals = {
   onMeet: boolean;
   contentReady: boolean;
+  contentMissing: boolean;
   lifecycle: MeetingLifecycle;
 };
 
@@ -10,6 +11,9 @@ export type RuntimeMessage =
   | { type: 'GET_SESSION_STATUS' }
   | { type: 'GET_CONTENT_STATUS' }
   | { type: 'CONTENT_STATUS'; payload: { signal: MeetStateSignal } }
+  | { type: 'CONTENT_SCRIPT_READY'; payload: { meetCode: string; url: string; startedAt: number } }
+  | { type: 'PING_CONTENT_SCRIPT' }
+  | { type: 'PONG_CONTENT_SCRIPT'; payload: { meetCode: string; signal: MeetStateSignal } }
   | { type: 'SESSION_STATUS'; payload: SessionSignals }
   | { type: MeetStateSignal }
   | { type: 'CAPTION_OBSERVATION'; payload: CaptionObservation }
@@ -27,6 +31,7 @@ const isSignals = (value: unknown): value is SessionSignals => {
   const signals = value as Record<string, unknown>;
   return typeof signals.onMeet === 'boolean'
     && typeof signals.contentReady === 'boolean'
+    && typeof signals.contentMissing === 'boolean'
     && isLifecycle(signals.lifecycle);
 };
 
@@ -51,8 +56,17 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
   }
 
   const message = value as { type: string; payload?: unknown };
-  if (message.type === 'GET_SESSION_STATUS' || message.type === 'GET_CONTENT_STATUS') {
+  if (message.type === 'GET_SESSION_STATUS'
+    || message.type === 'GET_CONTENT_STATUS'
+    || message.type === 'PING_CONTENT_SCRIPT') {
     return message.payload === undefined;
+  }
+  if (message.type === 'CONTENT_SCRIPT_READY') return isContentScriptReady(message.payload);
+  if (message.type === 'PONG_CONTENT_SCRIPT') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && typeof (message.payload as Record<string, unknown>).meetCode === 'string'
+      && isMeetStateSignal((message.payload as Record<string, unknown>).signal);
   }
   if (isMeetStateSignal(message.type)) return message.payload === undefined;
   if (message.type === 'CONTENT_STATUS') {
@@ -67,6 +81,16 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
 }
 import type { CaptionObservation, MeetStateSignal } from '../platforms/googleMeet/types';
 import type { TranscriptSegment } from '../transcript/types';
+
+const isContentScriptReady = (
+  value: unknown,
+): value is { meetCode: string; url: string; startedAt: number } => {
+  if (!value || typeof value !== 'object') return false;
+  const info = value as Record<string, unknown>;
+  return typeof info.meetCode === 'string'
+    && typeof info.url === 'string'
+    && typeof info.startedAt === 'number';
+};
 
 const isMeetingStarted = (
   value: unknown,

@@ -1,4 +1,4 @@
-export type LogNamespace = 'caption' | 'transcript' | 'storage' | 'ui';
+export type LogNamespace = 'caption' | 'transcript' | 'storage' | 'ui' | 'content' | 'background';
 
 let enabled = import.meta.env.DEV;
 
@@ -9,6 +9,9 @@ export function setLoggingEnabled(value: boolean): void {
 export function createLogger(namespace: LogNamespace) {
   const prefix = `[tuhclip][${namespace}]`;
   return {
+    info: (...values: unknown[]) => {
+      console.info(prefix, ...values);
+    },
     debug: (...values: unknown[]) => {
       if (enabled) console.debug(prefix, ...values);
     },

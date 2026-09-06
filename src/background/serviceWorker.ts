@@ -1,13 +1,43 @@
 import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
-import { resolveSessionStatus } from './sessionStatus';
+import { createLogger } from '../shared/logger';
+import { createInjectionTracker, isMissingReceiverError } from './contentHealth';
 import { shouldRelayToExtension } from './messageRelay';
+import { resolveSessionStatus } from './sessionStatus';
+
+const logger = createLogger('background');
+const injections = createInjectionTracker();
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+
+async function readContentStatus(tabId: number) {
+  try {
+    const response: unknown = await chrome.tabs.sendMessage(tabId, { type: 'GET_CONTENT_STATUS' } satisfies RuntimeMessage);
+    return isRuntimeMessage(response) && response.type === 'CONTENT_STATUS' ? response.payload : null;
+  } catch (error) {
+    if (isMissingReceiverError(error)) throw error;
+    logger.debug('Content status unreadable', error);
+    return null;
+  }
+}
+
+async function healContentScript(tabId: number): Promise<void> {
+  if (!injections.shouldInject(tabId)) return;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['assets/content.js'] });
+    injections.markInjected(tabId);
+    logger.debug('Content script injected into tab', tabId);
+  } catch (error) {
+    injections.markFailed(tabId);
+    logger.debug('Content script injection failed', error);
+    throw error;
+  }
+}
 
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!isRuntimeMessage(raw)) return false;
 
-  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'MEETING_STARTED')) {
+  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY')) {
+    logger.debug('Message arrived from Meet tab', raw.type);
     chrome.tabs.query({ active: true, currentWindow: true }).then(([activeTab]) => {
       if (shouldRelayToExtension(raw, sender.tab ?? {}, activeTab)) {
         return chrome.runtime.sendMessage(raw);
@@ -19,14 +49,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (raw.type !== 'GET_SESSION_STATUS') return false;
 
   chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
-    return resolveSessionStatus(tab, async (tabId) => {
-      try {
-        const response: unknown = await chrome.tabs.sendMessage(tabId, { type: 'GET_CONTENT_STATUS' } satisfies RuntimeMessage);
-        return isRuntimeMessage(response) && response.type === 'CONTENT_STATUS' ? response.payload : null;
-      } catch {
-        return null;
-      }
-    });
+    return resolveSessionStatus(tab, readContentStatus, healContentScript);
   }).then((payload) => {
     sendResponse({ type: 'SESSION_STATUS', payload } satisfies RuntimeMessage);
   });

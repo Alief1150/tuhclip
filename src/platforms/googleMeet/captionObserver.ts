@@ -99,6 +99,7 @@ export function createCaptionObserver(options: CaptionObserverOptions): CaptionO
   let discoveryObserver: ObserverLike | undefined;
   let regionObserver: ObserverLike | undefined;
   let navigationCleanup: (() => void) | undefined;
+  let searchLogged = false;
 
   const emitState = (next: MeetStateSignal) => {
     if (state === next) return;
@@ -138,10 +139,15 @@ export function createCaptionObserver(options: CaptionObserverOptions): CaptionO
     region = nextRegion;
 
     if (!region) {
+      if (!searchLogged) {
+        searchLogged = true;
+        logger.debug('Searching for caption region');
+      }
       emitState(hadRegion ? 'CAPTIONS_INACTIVE' : 'CAPTIONS_WAITING');
       return;
     }
 
+    searchLogged = false;
     logger.debug('Caption region found');
     if (hadRegion) logger.debug('Observer reattached');
     hadRegion = true;

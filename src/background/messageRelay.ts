@@ -1,6 +1,6 @@
 import { isRuntimeMessage } from '../shared/messages';
 
-const relaySignals = new Set(['MEET_DETECTED', 'CAPTIONS_WAITING', 'CAPTIONS_ACTIVE', 'CAPTIONS_INACTIVE', 'TRANSCRIPT_SEGMENT', 'MEETING_STARTED']);
+const relaySignals = new Set(['MEET_DETECTED', 'CAPTIONS_WAITING', 'CAPTIONS_ACTIVE', 'CAPTIONS_INACTIVE', 'TRANSCRIPT_SEGMENT', 'MEETING_STARTED', 'CONTENT_SCRIPT_READY']);
 
 type TabIdentity = { id?: number; url?: string };
 

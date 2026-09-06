@@ -1,8 +1,10 @@
 import type { SessionSignals } from '../shared/messages';
 import type { MeetStateSignal } from '../platforms/googleMeet/types';
+import { isMissingReceiverError } from './contentHealth';
 
 type Tab = { id?: number; url?: string } | undefined;
 type ReadContentStatus = (tabId: number) => Promise<{ signal: MeetStateSignal } | null>;
+type HealContentScript = (tabId: number) => Promise<void>;
 
 const lifecycleBySignal = {
   MEET_DETECTED: 'waiting',
@@ -11,16 +13,45 @@ const lifecycleBySignal = {
   CAPTIONS_INACTIVE: 'ended',
 } as const;
 
-export async function resolveSessionStatus(tab: Tab, readContentStatus: ReadContentStatus): Promise<SessionSignals> {
+const missing: SessionSignals = { onMeet: true, contentReady: false, contentMissing: true, lifecycle: 'waiting' };
+
+export async function resolveSessionStatus(
+  tab: Tab,
+  readContentStatus: ReadContentStatus,
+  healContentScript: HealContentScript = async () => undefined,
+): Promise<SessionSignals> {
   const onMeet = tab?.url?.startsWith('https://meet.google.com/') ?? false;
   if (!onMeet || tab?.id === undefined) {
-    return { onMeet, contentReady: false, lifecycle: 'waiting' };
+    return { onMeet, contentReady: false, contentMissing: false, lifecycle: 'waiting' };
   }
 
-  const content = await readContentStatus(tab.id);
-  return {
-    onMeet: true,
-    contentReady: content !== null,
-    lifecycle: content ? lifecycleBySignal[content.signal] : 'waiting',
-  };
+  try {
+    const content = await readContentStatus(tab.id);
+    if (!content) {
+      return { onMeet: true, contentReady: false, contentMissing: false, lifecycle: 'waiting' };
+    }
+    return {
+      onMeet: true,
+      contentReady: true,
+      contentMissing: false,
+      lifecycle: lifecycleBySignal[content.signal],
+    };
+  } catch (error) {
+    if (!isMissingReceiverError(error)) {
+      return { onMeet: true, contentReady: false, contentMissing: false, lifecycle: 'waiting' };
+    }
+    try {
+      await healContentScript(tab.id);
+      const content = await readContentStatus(tab.id);
+      if (!content) return { ...missing, contentMissing: false };
+      return {
+        onMeet: true,
+        contentReady: true,
+        contentMissing: false,
+        lifecycle: lifecycleBySignal[content.signal],
+      };
+    } catch {
+      return missing;
+    }
+  }
 }

@@ -5,12 +5,12 @@ describe('isRuntimeMessage', () => {
   it('accepts a complete session status message', () => {
     expect(isRuntimeMessage({
       type: 'SESSION_STATUS',
-      payload: { onMeet: true, contentReady: true, lifecycle: 'waiting' },
+      payload: { onMeet: true, contentReady: true, contentMissing: false, lifecycle: 'waiting' },
     })).toBe(true);
   });
 
   it('rejects malformed runtime data', () => {
-    expect(isRuntimeMessage({ type: 'SESSION_STATUS', payload: { onMeet: true, contentReady: true, lifecycle: 'paused' } })).toBe(false);
+    expect(isRuntimeMessage({ type: 'SESSION_STATUS', payload: { onMeet: true, contentReady: true, contentMissing: false, lifecycle: 'paused' } })).toBe(false);
     expect(isRuntimeMessage(null)).toBe(false);
   });
 
@@ -31,6 +31,23 @@ describe('isRuntimeMessage', () => {
     expect(isRuntimeMessage({
       type: 'CAPTION_OBSERVATION',
       payload: { speaker: 'Ada', text: '', observedAt: 'now' },
+    })).toBe(false);
+  });
+
+  it('accepts the content-script handshake and ping/pong pair', () => {
+    expect(isRuntimeMessage({
+      type: 'CONTENT_SCRIPT_READY',
+      payload: { meetCode: 'abc-defg-hij', url: 'https://meet.google.com/abc-defg-hij', startedAt: 1 },
+    })).toBe(true);
+    expect(isRuntimeMessage({ type: 'PING_CONTENT_SCRIPT' })).toBe(true);
+    expect(isRuntimeMessage({
+      type: 'PONG_CONTENT_SCRIPT',
+      payload: { meetCode: 'abc-defg-hij', signal: 'CAPTIONS_ACTIVE' },
+    })).toBe(true);
+    expect(isRuntimeMessage({ type: 'CONTENT_SCRIPT_READY', payload: { meetCode: 'x' } })).toBe(false);
+    expect(isRuntimeMessage({
+      type: 'PONG_CONTENT_SCRIPT',
+      payload: { meetCode: 'x', signal: 'NOPE' },
     })).toBe(false);
   });
 

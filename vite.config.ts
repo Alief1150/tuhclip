@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +12,7 @@ const manifest = {
   version: '0.1.0',
   minimum_chrome_version: '116',
   description: 'Local Google Meet caption transcripts in the Chrome side panel.',
-  permissions: ['sidePanel'],
+  permissions: ['sidePanel', 'scripting'],
   host_permissions: ['https://meet.google.com/*'],
   background: { service_worker: 'assets/background.js', type: 'module' },
   action: { default_title: 'Open tuhclip' },
@@ -26,6 +27,7 @@ const manifest = {
 
 export default defineConfig({
   plugins: [
+    tailwindcss(),
     react(),
     {
       name: 'extension-manifest',

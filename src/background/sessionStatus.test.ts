@@ -9,7 +9,7 @@ describe('resolveSessionStatus', () => {
       return { signal: 'CAPTIONS_WAITING' };
     });
 
-    expect(status).toEqual({ onMeet: false, contentReady: false, lifecycle: 'waiting' });
+    expect(status).toEqual({ onMeet: false, contentReady: false, contentMissing: false, lifecycle: 'waiting' });
     expect(contacted).toBe(false);
   });
 
@@ -19,7 +19,7 @@ describe('resolveSessionStatus', () => {
       async (tabId) => tabId === 7 ? { signal: 'CAPTIONS_ACTIVE' } : null,
     );
 
-    expect(status).toEqual({ onMeet: true, contentReady: true, lifecycle: 'active' });
+    expect(status).toEqual({ onMeet: true, contentReady: true, contentMissing: false, lifecycle: 'active' });
   });
 
   it('maps inactive captions to an ended lifecycle', async () => {
@@ -27,7 +27,7 @@ describe('resolveSessionStatus', () => {
       { id: 7, url: 'https://meet.google.com/abc-defg-hij' },
       async () => ({ signal: 'CAPTIONS_INACTIVE' }),
     );
-    expect(status).toEqual({ onMeet: true, contentReady: true, lifecycle: 'ended' });
+    expect(status).toEqual({ onMeet: true, contentReady: true, contentMissing: false, lifecycle: 'ended' });
   });
 
   it('reports Meet detected when the active document cannot respond', async () => {
@@ -36,6 +36,39 @@ describe('resolveSessionStatus', () => {
       async () => null,
     );
 
-    expect(status).toEqual({ onMeet: true, contentReady: false, lifecycle: 'waiting' });
+    expect(status).toEqual({ onMeet: true, contentReady: false, contentMissing: false, lifecycle: 'waiting' });
+  });
+
+  it('self-heals a missing content script by injecting once and re-reading', async () => {
+    let reads = 0;
+    let heals = 0;
+    const status = await resolveSessionStatus(
+      { id: 7, url: 'https://meet.google.com/abc-defg-hij' },
+      async () => {
+        reads += 1;
+        if (reads === 1) throw new Error('Could not establish connection. Receiving end does not exist.');
+        return { signal: 'CAPTIONS_WAITING' };
+      },
+      async () => {
+        heals += 1;
+      },
+    );
+
+    expect(heals).toBe(1);
+    expect(status).toEqual({ onMeet: true, contentReady: true, contentMissing: false, lifecycle: 'waiting' });
+  });
+
+  it('reports content missing when healing fails', async () => {
+    const status = await resolveSessionStatus(
+      { id: 7, url: 'https://meet.google.com/abc-defg-hij' },
+      async () => {
+        throw new Error('Could not establish connection. Receiving end does not exist.');
+      },
+      async () => {
+        throw new Error('injection denied');
+      },
+    );
+
+    expect(status).toEqual({ onMeet: true, contentReady: false, contentMissing: true, lifecycle: 'waiting' });
   });
 });
