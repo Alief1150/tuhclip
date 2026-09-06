@@ -51,6 +51,25 @@ describe('isRuntimeMessage', () => {
     })).toBe(false);
   });
 
+  it('accepts heartbeat and active-session messages with identity', () => {
+    expect(isRuntimeMessage({
+      type: 'MEET_HEARTBEAT',
+      payload: { meetingId: 'meeting-A', meetCode: 'aaa-bbbb-ccc', timestamp: 1 },
+    })).toBe(true);
+    expect(isRuntimeMessage({ type: 'GET_ACTIVE_SESSIONS' })).toBe(true);
+    expect(isRuntimeMessage({
+      type: 'ACTIVE_SESSIONS',
+      payload: { sessions: [{
+        meetingId: 'meeting-A', meetCode: 'aaa-bbbb-ccc', meetUrl: 'https://meet.google.com/aaa-bbbb-ccc',
+        tabId: 101, windowId: 1, title: 'Kelas', startedAt: 1, lastSeenAt: 2, reconnectCount: 0, status: 'active',
+      }] },
+    })).toBe(true);
+    expect(isRuntimeMessage({
+      type: 'ACTIVE_SESSIONS',
+      payload: { sessions: [{ meetingId: 'meeting-A' }] },
+    })).toBe(false);
+  });
+
   it('accepts speaker-turn messages carrying a finalized flag', () => {
     expect(isRuntimeMessage({
       type: 'TRANSCRIPT_TURN',

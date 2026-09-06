@@ -96,6 +96,12 @@ async function init(): Promise<void> {
   });
   bootLogger.info('handshake sent');
 
+  const sendHeartbeat = () => {
+    safeSend({ type: 'MEET_HEARTBEAT', payload: { meetingId, meetCode, timestamp: Date.now() } });
+  };
+  sendHeartbeat();
+  const heartbeatTimer = window.setInterval(sendHeartbeat, 15_000);
+
   const inactivityTimer = window.setInterval(flushFinalized, 1000);
 
   const observer = createCaptionObserver({
@@ -120,6 +126,7 @@ async function init(): Promise<void> {
 
   window.addEventListener('pagehide', () => {
     window.clearInterval(inactivityTimer);
+    window.clearInterval(heartbeatTimer);
     absorbChunk(engine.meetingEnded(Date.now()));
     safeSend({ type: 'SESSION_ENDED', payload: { meetingId, endedAt: Date.now() } });
     const closing = turns.finalizeOpen(Date.now());

@@ -2,12 +2,14 @@ import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
 import { createLogger } from '../shared/logger';
 import { createMeeting, endMeeting, getOrResumeMeeting, meetingTitleFallback } from '../storage/meetings';
 import { upsertSegment } from '../storage/segments';
-import { createInjectionTracker, isMissingReceiverError } from './contentHealth';
+import { createInjectionTracker, extractMeetCode, isMissingReceiverError } from './contentHealth';
 import { shouldRelayToExtension } from './messageRelay';
+import { SessionManager } from './sessionManager';
 import { resolveSessionStatus } from './sessionStatus';
 
 const logger = createLogger('background');
 const injections = createInjectionTracker();
+const sessions = new SessionManager();
 let lastBackgroundTurn: { meetingId: string; at: number } | null = null;
 
 const BACKGROUND_RECENT_MS = 5 * 60 * 1000;
@@ -41,11 +43,33 @@ async function healContentScript(tabId: number): Promise<void> {
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!isRuntimeMessage(raw)) return false;
 
-  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY' || raw.type === 'SESSION_ENDED')) {
+  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY' || raw.type === 'SESSION_ENDED' || raw.type === 'MEET_HEARTBEAT')) {
     logger.debug('Message arrived from Meet tab', raw.type);
     if (raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN') {
       lastBackgroundTurn = { meetingId: raw.payload.meetingId, at: Date.now() };
       void upsertSegment(raw.payload).catch((error) => logger.debug('Background persist failed', error));
+    }
+    if (raw.type === 'MEETING_STARTED') {
+      sessions.registerOrHeartbeat({
+        meetingId: raw.payload.meetingId,
+        meetCode: extractMeetCode(new URL(raw.payload.meetUrl).pathname),
+        meetUrl: raw.payload.meetUrl,
+        title: raw.payload.title,
+        tabId: sender.tab?.id ?? -1,
+        windowId: sender.tab?.windowId ?? -1,
+        now: Date.now(),
+      });
+    }
+    if (raw.type === 'CONTENT_SCRIPT_READY') {
+      sessions.registerOrHeartbeat({
+        meetingId: `meet-${raw.payload.meetCode || 'unknown'}`,
+        meetCode: raw.payload.meetCode,
+        meetUrl: raw.payload.url,
+        title: '',
+        tabId: sender.tab?.id ?? -1,
+        windowId: sender.tab?.windowId ?? -1,
+        now: Date.now(),
+      });
     }
     if (raw.type === 'MEETING_STARTED') {
       lastBackgroundTurn = { meetingId: raw.payload.meetingId, at: Date.now() };
@@ -59,6 +83,19 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     }
     if (raw.type === 'SESSION_ENDED') {
       void endMeeting(raw.payload.meetingId, raw.payload.endedAt).catch((error) => logger.debug('Background meeting end failed', error));
+      sessions.markEnded(raw.payload.meetingId, raw.payload.endedAt);
+    }
+    if (raw.type === 'MEET_HEARTBEAT') {
+      sessions.registerOrHeartbeat({
+        meetingId: raw.payload.meetingId,
+        meetCode: raw.payload.meetCode,
+        meetUrl: sender.tab?.url ?? '',
+        title: sessions.get(raw.payload.meetingId)?.title ?? '',
+        tabId: sender.tab?.id ?? -1,
+        windowId: sender.tab?.windowId ?? -1,
+        now: raw.payload.timestamp,
+      });
+      return false;
     }
     chrome.tabs.query({ active: true, currentWindow: true }).then(([activeTab]) => {
       if (shouldRelayToExtension(raw, sender.tab ?? {}, activeTab)) {
@@ -85,6 +122,11 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       } satisfies RuntimeMessage);
     });
     return true;
+  }
+
+  if (raw.type === 'GET_ACTIVE_SESSIONS') {
+    sendResponse({ type: 'ACTIVE_SESSIONS', payload: { sessions: sessions.getActive() } } satisfies RuntimeMessage);
+    return false;
   }
 
   if (raw.type !== 'GET_SESSION_STATUS') return false;

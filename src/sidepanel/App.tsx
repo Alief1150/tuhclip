@@ -5,7 +5,8 @@ import { toMarkdown } from '../export/markdown';
 import { toText } from '../export/text';
 import { isRuntimeMessage, type RuntimeMessage, type SessionSignals } from '../shared/messages';
 import { createLogger } from '../shared/logger';
-import { createMeeting, endMeeting, listMeetings, meetingTitleFallback, type MeetingHistoryEntry, type MeetingSession } from '../storage/meetings';
+import { createMeeting, endMeeting, getMeeting, listMeetings, meetingTitleFallback, type MeetingHistoryEntry, type MeetingSession } from '../storage/meetings';
+import type { RuntimeSession } from '../background/sessionManager';
 import { listSegments, upsertSegment } from '../storage/segments';
 import type { TranscriptSegment } from '../transcript/types';
 import { deriveViewState } from './viewState';
@@ -131,6 +132,8 @@ export function App() {
   const [history, setHistory] = useState<MeetingHistoryEntry[]>([]);
   const [historyError, setHistoryError] = useState(false);
   const [viewing, setViewing] = useState<{ meeting: MeetingSession; segments: TranscriptSegment[] } | null>(null);
+  const [activeSessions, setActiveSessions] = useState<RuntimeSession[]>([]);
+  const selectedByUser = useRef(false);
   const retry = useRef<() => void>(() => undefined);
   const meetingRef = useRef<MeetingSession | null>(null);
   meetingRef.current = meeting;
@@ -160,12 +163,37 @@ export function App() {
   const refresh = useCallback(async () => {
     try {
       setSignals(await fetchSignals());
+      const sessionsResponse: unknown = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_SESSIONS' } satisfies RuntimeMessage);
+      if (isRuntimeMessage(sessionsResponse) && sessionsResponse.type === 'ACTIVE_SESSIONS') {
+        setActiveSessions(sessionsResponse.payload.sessions);
+      }
       setError(false);
     } catch (cause) {
       logger.error('Session status failed', cause);
       setError(true);
     }
   }, []);
+
+  const selectSession = useCallback(async (meetingId: string, manual: boolean) => {
+    if (manual) selectedByUser.current = true;
+    try {
+      const stored = await getMeeting(meetingId);
+      if (!stored) return;
+      const full = await listSegments(meetingId);
+      setMeeting(stored);
+      setSegments(full);
+      setActiveCaption(null);
+      setFollow(followTracker.current.jumpToLatest(meetingId));
+      if (!manual) selectedByUser.current = false;
+    } catch (cause) {
+      logger.error('Session select failed', cause);
+    }
+  }, []);
+
+  const autoSelectSession = useCallback((meetingId: string) => {
+    if (selectedByUser.current || meetingRef.current?.id === meetingId) return;
+    void selectSession(meetingId, false);
+  }, [selectSession]);
 
   const refreshHistory = useCallback(async () => {
     try {
@@ -240,6 +268,11 @@ export function App() {
           createdAt: Date.now(),
         };
         void createMeeting(session).then((stored) => {
+          if (meetingRef.current?.id !== stored.id && selectedByUser.current) {
+            void refreshHistory();
+            return;
+          }
+          selectedByUser.current = false;
           setMeeting(stored);
           setSegments([]);
           setActiveCaption(null);
@@ -258,6 +291,7 @@ export function App() {
       }
       if (raw.type === 'TRANSCRIPT_TURN' || raw.type === 'TRANSCRIPT_SEGMENT') {
         const segment = raw.payload;
+        autoSelectSession(segment.meetingId);
         void upsertSegment(segment).then(() => {
           setActiveCaption(null);
           if (meetingRef.current?.id === segment.meetingId) {
@@ -282,7 +316,7 @@ export function App() {
     };
     chrome.runtime.onMessage.addListener(onSignal);
     return () => chrome.runtime.onMessage.removeListener(onSignal);
-  }, [refreshHistory]);
+  }, [refreshHistory, autoSelectSession, scrollLiveToBottom]);
 
   const openHistoryEntry = useCallback(async (entry: MeetingHistoryEntry) => {
     try {
@@ -362,6 +396,24 @@ export function App() {
                   <ExportMenu label="Export current transcript" onExport={exportCurrent} />
                 )}
               </div>
+              {activeSessions.length > 1 && (
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <Button variant="outline" size="sm" aria-label={`Select active meeting, ${activeSessions.length} meetings active`}>
+                        ● {activeSessions.length} meetings active ▾
+                      </Button>
+                    }
+                  />
+                  <MenuPopup>
+                    {activeSessions.map((session) => (
+                      <MenuItem key={session.meetingId} onClick={() => void selectSession(session.meetingId, true)}>
+                        {session.title || session.meetCode || session.meetingId}
+                      </MenuItem>
+                    ))}
+                  </MenuPopup>
+                </Menu>
+              )}
 
               {error ? (
                 <Empty className="py-8">

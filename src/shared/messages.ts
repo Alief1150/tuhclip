@@ -25,6 +25,12 @@ export type RuntimeMessage =
       type: 'SESSION_ENDED';
       payload: { meetingId: string; endedAt: number };
     }
+  | {
+      type: 'MEET_HEARTBEAT';
+      payload: { meetingId: string; meetCode: string; timestamp: number };
+    }
+  | { type: 'GET_ACTIVE_SESSIONS' }
+  | { type: 'ACTIVE_SESSIONS'; payload: { sessions: RuntimeSession[] } }
   | { type: 'PING_CONTENT_SCRIPT' }
   | { type: 'PONG_CONTENT_SCRIPT'; payload: { meetCode: string; signal: MeetStateSignal } }
   | { type: 'SESSION_STATUS'; payload: SessionSignals }
@@ -73,8 +79,22 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
   const message = value as { type: string; payload?: unknown };
   if (message.type === 'GET_SESSION_STATUS'
     || message.type === 'GET_CONTENT_STATUS'
-    || message.type === 'PING_CONTENT_SCRIPT') {
+    || message.type === 'PING_CONTENT_SCRIPT'
+    || message.type === 'GET_ACTIVE_SESSIONS') {
     return message.payload === undefined;
+  }
+  if (message.type === 'MEET_HEARTBEAT') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && typeof (message.payload as Record<string, unknown>).meetingId === 'string'
+      && typeof (message.payload as Record<string, unknown>).meetCode === 'string'
+      && typeof (message.payload as Record<string, unknown>).timestamp === 'number';
+  }
+  if (message.type === 'ACTIVE_SESSIONS') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && Array.isArray((message.payload as Record<string, unknown>).sessions)
+      && ((message.payload as Record<string, unknown>).sessions as unknown[]).every(isRuntimeSession);
   }
   if (message.type === 'CONTENT_SCRIPT_READY') return isContentScriptReady(message.payload);
   if (message.type === 'GET_OR_RESUME_MEETING_SESSION') {
@@ -117,11 +137,27 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
   }
   return message.type === 'SESSION_STATUS' && isSignals(message.payload);
 }
+import type { RuntimeSession } from '../background/sessionManager';
 import type { CaptionObservation, MeetStateSignal } from '../platforms/googleMeet/types';
 import type { SpeakerTurn } from '../transcript/speakerTurn';
 import type { TranscriptSegment } from '../transcript/types';
 
 type TranscriptTurn = SpeakerTurn;
+
+const isRuntimeSession = (value: unknown): value is RuntimeSession => {
+  if (!value || typeof value !== 'object') return false;
+  const session = value as Record<string, unknown>;
+  return typeof session.meetingId === 'string'
+    && typeof session.meetCode === 'string'
+    && typeof session.meetUrl === 'string'
+    && typeof session.tabId === 'number'
+    && typeof session.windowId === 'number'
+    && typeof session.title === 'string'
+    && typeof session.startedAt === 'number'
+    && typeof session.lastSeenAt === 'number'
+    && typeof session.reconnectCount === 'number'
+    && (session.status === 'active' || session.status === 'disconnected' || session.status === 'ended');
+};
 
 const isContentScriptReady = (
   value: unknown,
