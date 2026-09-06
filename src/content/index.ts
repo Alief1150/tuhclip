@@ -7,104 +7,126 @@ import { TranscriptEngine } from '../transcript/transcriptEngine';
 
 declare global {
   interface Window {
-    __tuhclipContentReady?: boolean;
+    __tuhclipContentInitialized?: boolean;
   }
 }
-
-if (window.__tuhclipContentReady) {
-  throw new Error('[tuhclip][content] duplicate content script instance ignored');
-}
-window.__tuhclipContentReady = true;
 
 const bootLogger = createLogger('content');
-const logger = createLogger('caption');
-const transcriptLogger = createLogger('transcript');
 
-const meetCode = extractMeetCode(location.pathname);
-bootLogger.info('initialized, meet code:', meetCode || '(none)');
-let signal: MeetStateSignal = 'MEET_DETECTED';
+if (window.__tuhclipContentInitialized) {
+  bootLogger.info('duplicate content script instance ignored');
+} else {
+  window.__tuhclipContentInitialized = true;
+  void init().catch((cause) => bootLogger.info('content script init failed', cause));
+}
 
-const meetingId = `meet-${Date.now().toString(36)}`;
-const meetingStart = Date.now();
-const engine = new TranscriptEngine({ meetingId, meetingStart });
-let meetingAnnounced = false;
+function safeSend(message: RuntimeMessage): void {
+  try {
+    chrome.runtime.sendMessage(message).catch(() => undefined);
+  } catch {
+    bootLogger.info('extension context unavailable, message dropped');
+  }
+}
 
-const send = (message: RuntimeMessage) => {
-  chrome.runtime.sendMessage(message).catch((cause) => logger.debug('Runtime message unavailable', cause));
-};
-
-send({
-  type: 'CONTENT_SCRIPT_READY',
-  payload: { meetCode, url: location.href, startedAt: meetingStart },
-});
-bootLogger.info('handshake sent');
-
-const pageTitle = () => {
+function pageTitle(): string {
   const title = document.title.trim().replace(/\s*-\s*Google Meet\s*$/i, '').trim();
   return title && title.toLowerCase() !== 'meet' ? title : '';
-};
+}
 
-const announceMeeting = () => {
-  if (meetingAnnounced) return;
-  meetingAnnounced = true;
-  send({
-    type: 'MEETING_STARTED',
-    payload: {
-      meetingId,
-      title: pageTitle(),
-      meetUrl: location.href,
-      startedAt: meetingStart,
+async function requestSession(meetCode: string): Promise<{ meetingId: string; meetingStart: number }> {
+  const fallback = { meetingId: `meet-${Date.now().toString(36)}`, meetingStart: Date.now() };
+  try {
+    const response: unknown = await chrome.runtime.sendMessage({
+      type: 'GET_OR_RESUME_MEETING_SESSION',
+      payload: { meetCode, title: pageTitle(), meetUrl: location.href, now: Date.now() },
+    } satisfies RuntimeMessage);
+    if (isRuntimeMessage(response) && response.type === 'MEETING_SESSION') {
+      return { meetingId: response.payload.meetingId, meetingStart: response.payload.startedAt };
+    }
+  } catch {
+    bootLogger.info('session request failed, using local meeting');
+  }
+  return fallback;
+}
+
+async function init(): Promise<void> {
+  const logger = createLogger('caption');
+  const transcriptLogger = createLogger('transcript');
+  const meetCode = extractMeetCode(location.pathname);
+  bootLogger.info('initialized');
+  bootLogger.info('meet code:', meetCode || '(none)');
+
+  const { meetingId, meetingStart } = await requestSession(meetCode);
+  const engine = new TranscriptEngine({ meetingId, meetingStart });
+  let signal: MeetStateSignal = 'MEET_DETECTED';
+  let meetingAnnounced = false;
+
+  const announceMeeting = () => {
+    if (meetingAnnounced) return;
+    meetingAnnounced = true;
+    safeSend({
+      type: 'MEETING_STARTED',
+      payload: { meetingId, title: pageTitle(), meetUrl: location.href, startedAt: meetingStart },
+    });
+  };
+
+  const flushFinalized = () => {
+    for (const segment of engine.checkInactivity(Date.now())) {
+      transcriptLogger.debug('Segment finalized', segment.speaker, segment.text);
+      safeSend({ type: 'TRANSCRIPT_SEGMENT', payload: segment });
+    }
+  };
+
+  safeSend({
+    type: 'CONTENT_SCRIPT_READY',
+    payload: { meetCode, url: location.href, startedAt: meetingStart },
+  });
+  bootLogger.info('handshake sent');
+
+  const inactivityTimer = window.setInterval(flushFinalized, 1000);
+
+  const observer = createCaptionObserver({
+    onState: (next) => {
+      const previous = signal;
+      signal = next;
+      if ((next === 'CAPTIONS_INACTIVE' || next === 'CAPTIONS_WAITING') && previous === 'CAPTIONS_ACTIVE') {
+        const segment = engine.captionGone(Date.now());
+        if (segment) {
+          transcriptLogger.debug('Segment finalized', segment.speaker, segment.text);
+          safeSend({ type: 'TRANSCRIPT_SEGMENT', payload: segment });
+        }
+      }
+      safeSend({ type: next });
+    },
+    onObservation: (observation) => {
+      announceMeeting();
+      const hadActive = engine.active !== null;
+      engine.ingest(observation);
+      transcriptLogger.debug(hadActive ? 'Active segment updated' : 'Active segment created', observation.speaker, observation.text);
+      safeSend({ type: 'CAPTION_OBSERVATION', payload: observation });
     },
   });
-};
 
-const flushFinalized = () => {
-  for (const segment of engine.checkInactivity(Date.now())) {
-    transcriptLogger.debug('Segment finalized', segment.speaker, segment.text);
-    send({ type: 'TRANSCRIPT_SEGMENT', payload: segment });
-  }
-};
+  observer.start();
 
-const inactivityTimer = window.setInterval(flushFinalized, 1000);
-
-const observer = createCaptionObserver({
-  onState: (next) => {
-    const previous = signal;
-    signal = next;
-    if ((next === 'CAPTIONS_INACTIVE' || next === 'CAPTIONS_WAITING') && previous === 'CAPTIONS_ACTIVE') {
-      const segment = engine.captionGone(Date.now());
-      if (segment) {
-        transcriptLogger.debug('Segment finalized', segment.speaker, segment.text);
-        send({ type: 'TRANSCRIPT_SEGMENT', payload: segment });
-      }
+  window.addEventListener('pagehide', () => {
+    window.clearInterval(inactivityTimer);
+    const segment = engine.meetingEnded(Date.now());
+    if (segment) {
+      transcriptLogger.debug('Segment finalized', segment.speaker, segment.text);
+      safeSend({ type: 'TRANSCRIPT_SEGMENT', payload: segment });
     }
-    send({ type: next });
-  },
-  onObservation: (observation) => {
-    announceMeeting();
-    const hadActive = engine.active !== null;
-    engine.ingest(observation);
-    transcriptLogger.debug(hadActive ? 'Active segment updated' : 'Active segment created', observation.speaker, observation.text);
-    send({ type: 'CAPTION_OBSERVATION', payload: observation });
-  },
-});
+    observer.stop();
+  }, { once: true });
 
-observer.start();
-
-window.addEventListener('pagehide', () => {
-  window.clearInterval(inactivityTimer);
-  const segment = engine.meetingEnded(Date.now());
-  if (segment) send({ type: 'TRANSCRIPT_SEGMENT', payload: segment });
-  observer.stop();
-}, { once: true });
-
-chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
-  if (!isRuntimeMessage(raw)) return false;
-  if (raw.type === 'PING_CONTENT_SCRIPT') {
-    sendResponse({ type: 'PONG_CONTENT_SCRIPT', payload: { meetCode, signal } } satisfies RuntimeMessage);
+  chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
+    if (!isRuntimeMessage(raw)) return false;
+    if (raw.type === 'PING_CONTENT_SCRIPT') {
+      sendResponse({ type: 'PONG_CONTENT_SCRIPT', payload: { meetCode, signal } } satisfies RuntimeMessage);
+      return false;
+    }
+    if (raw.type !== 'GET_CONTENT_STATUS') return false;
+    sendResponse({ type: 'CONTENT_STATUS', payload: { signal } } satisfies RuntimeMessage);
     return false;
-  }
-  if (raw.type !== 'GET_CONTENT_STATUS') return false;
-  sendResponse({ type: 'CONTENT_STATUS', payload: { signal } } satisfies RuntimeMessage);
-  return false;
-});
+  });
+}

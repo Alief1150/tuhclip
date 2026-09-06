@@ -12,6 +12,14 @@ export type RuntimeMessage =
   | { type: 'GET_CONTENT_STATUS' }
   | { type: 'CONTENT_STATUS'; payload: { signal: MeetStateSignal } }
   | { type: 'CONTENT_SCRIPT_READY'; payload: { meetCode: string; url: string; startedAt: number } }
+  | {
+      type: 'GET_OR_RESUME_MEETING_SESSION';
+      payload: { meetCode: string; title: string; meetUrl: string; now: number };
+    }
+  | {
+      type: 'MEETING_SESSION';
+      payload: { meetingId: string; startedAt: number; resumed: boolean };
+    }
   | { type: 'PING_CONTENT_SCRIPT' }
   | { type: 'PONG_CONTENT_SCRIPT'; payload: { meetCode: string; signal: MeetStateSignal } }
   | { type: 'SESSION_STATUS'; payload: SessionSignals }
@@ -62,6 +70,19 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
     return message.payload === undefined;
   }
   if (message.type === 'CONTENT_SCRIPT_READY') return isContentScriptReady(message.payload);
+  if (message.type === 'GET_OR_RESUME_MEETING_SESSION') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && ['meetCode', 'title', 'meetUrl'].every((key) => typeof (message.payload as Record<string, unknown>)[key] === 'string')
+      && typeof (message.payload as Record<string, unknown>).now === 'number';
+  }
+  if (message.type === 'MEETING_SESSION') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && typeof (message.payload as Record<string, unknown>).meetingId === 'string'
+      && typeof (message.payload as Record<string, unknown>).startedAt === 'number'
+      && typeof (message.payload as Record<string, unknown>).resumed === 'boolean';
+  }
   if (message.type === 'PONG_CONTENT_SCRIPT') {
     return !!message.payload
       && typeof message.payload === 'object'

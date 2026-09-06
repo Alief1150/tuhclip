@@ -4,10 +4,50 @@ export interface MeetingSession {
   id: string;
   title: string;
   meetUrl: string;
+  meetCode?: string;
   startedAt: number;
   endedAt?: number;
   durationMs?: number;
   createdAt: number;
+}
+
+export const MEETING_RESUME_WINDOW_MS = 4 * 60 * 60 * 1000;
+
+export function meetingIdForCode(meetCode: string): string {
+  return `meet-${meetCode}`;
+}
+
+export async function getOrResumeMeeting(
+  meetCode: string,
+  info: { title: string; meetUrl: string },
+  now: number = Date.now(),
+): Promise<{ meeting: MeetingSession; resumed: boolean }> {
+  const fallbackTitle = info.title.trim() || meetingTitleFallback(now);
+  if (!meetCode) {
+    const fresh: MeetingSession = {
+      id: `meet-${now.toString(36)}`,
+      title: fallbackTitle,
+      meetUrl: info.meetUrl,
+      startedAt: now,
+      createdAt: now,
+    };
+    await storePut('meetings', fresh);
+    return { meeting: fresh, resumed: false };
+  }
+  const existing = await getMeeting(meetingIdForCode(meetCode)).catch(() => null);
+  if (existing && now - existing.startedAt <= MEETING_RESUME_WINDOW_MS) {
+    return { meeting: existing, resumed: true };
+  }
+  const meeting: MeetingSession = {
+    id: existing ? `meet-${meetCode}-${now.toString(36)}` : meetingIdForCode(meetCode),
+    title: fallbackTitle,
+    meetUrl: info.meetUrl,
+    meetCode,
+    startedAt: now,
+    createdAt: now,
+  };
+  await storePut('meetings', meeting);
+  return { meeting, resumed: false };
 }
 
 export interface MeetingHistoryEntry extends MeetingSession {

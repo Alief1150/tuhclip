@@ -46,7 +46,6 @@ export default defineConfig({
       input: {
         sidepanel: resolve(root, 'sidepanel.html'),
         background: resolve(root, 'src/background/serviceWorker.ts'),
-        content: resolve(root, 'src/content/index.ts'),
       },
       output: {
         entryFileNames: 'assets/[name].js',

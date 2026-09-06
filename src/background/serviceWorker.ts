@@ -1,5 +1,6 @@
 import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
 import { createLogger } from '../shared/logger';
+import { getOrResumeMeeting } from '../storage/meetings';
 import { createInjectionTracker, isMissingReceiverError } from './contentHealth';
 import { shouldRelayToExtension } from './messageRelay';
 import { resolveSessionStatus } from './sessionStatus';
@@ -44,6 +45,25 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       }
     }).catch(() => undefined);
     return false;
+  }
+
+  if (raw.type === 'GET_OR_RESUME_MEETING_SESSION') {
+    getOrResumeMeeting(raw.payload.meetCode, {
+      title: raw.payload.title,
+      meetUrl: raw.payload.meetUrl,
+    }, raw.payload.now).then(({ meeting, resumed }) => {
+      sendResponse({
+        type: 'MEETING_SESSION',
+        payload: { meetingId: meeting.id, startedAt: meeting.startedAt, resumed },
+      } satisfies RuntimeMessage);
+    }).catch((error) => {
+      logger.debug('Meeting session resume failed', error);
+      sendResponse({
+        type: 'MEETING_SESSION',
+        payload: { meetingId: `meet-${Date.now().toString(36)}`, startedAt: Date.now(), resumed: false },
+      } satisfies RuntimeMessage);
+    });
+    return true;
   }
 
   if (raw.type !== 'GET_SESSION_STATUS') return false;
