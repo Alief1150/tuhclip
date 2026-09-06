@@ -133,6 +133,29 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     return false;
   }
 
+  if (raw.type === 'OPEN_MEETING_TAB') {
+    const target = sessions.resolveMeetingTab(raw.payload.meetingId);
+    if (!target) {
+      sendResponse({ type: 'MEETING_TAB_OPENED', payload: { meetingId: raw.payload.meetingId, ok: false } } satisfies RuntimeMessage);
+      return false;
+    }
+    chrome.tabs.get(target.tabId).then((tab) => {
+      if (!tab) throw new Error('tab gone');
+      return chrome.tabs.update(target.tabId, { active: true }).then(() => {
+        if (tab.windowId !== undefined) {
+          return chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
+        }
+      });
+    }).then(() => {
+      sendResponse({ type: 'MEETING_TAB_OPENED', payload: { meetingId: raw.payload.meetingId, ok: true } } satisfies RuntimeMessage);
+    }).catch((error) => {
+      logger.debug('Open meeting tab failed', error);
+      sessions.markDisconnected(raw.payload.meetingId, Date.now());
+      sendResponse({ type: 'MEETING_TAB_OPENED', payload: { meetingId: raw.payload.meetingId, ok: false } } satisfies RuntimeMessage);
+    });
+    return true;
+  }
+
   if (raw.type !== 'GET_SESSION_STATUS') return false;
 
   chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {

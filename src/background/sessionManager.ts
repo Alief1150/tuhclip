@@ -78,6 +78,12 @@ export class SessionManager {
     return session ? { ...session } : null;
   }
 
+  resolveMeetingTab(meetingId: string): { tabId: number; windowId: number } | null {
+    const session = this.sessions.get(meetingId);
+    if (!session || session.tabId < 0) return null;
+    return { tabId: session.tabId, windowId: session.windowId };
+  }
+
   getActive(): RuntimeSession[] {
     return [...this.sessions.values()]
       .filter((session) => session.status === 'active')

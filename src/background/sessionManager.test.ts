@@ -79,6 +79,15 @@ describe('SessionManager', () => {
     expect(manager.get('meeting-A')?.status).toBe('ended');
   });
 
+  it('resolves the tab target only for sessions with a known tab', () => {
+    const manager = new SessionManager();
+    expect(manager.resolveMeetingTab('missing')).toBeNull();
+    manager.registerOrHeartbeat(heartbeatA());
+    expect(manager.resolveMeetingTab('meeting-A')).toEqual({ tabId: 101, windowId: 1 });
+    manager.registerOrHeartbeat(heartbeatA({ tabId: -1, windowId: -1 }));
+    expect(manager.resolveMeetingTab('meeting-A')).toBeNull();
+  });
+
   it('prunes only old ended sessions', () => {
     const manager = new SessionManager();
     manager.registerOrHeartbeat(heartbeatA());

@@ -70,6 +70,12 @@ describe('isRuntimeMessage', () => {
     })).toBe(false);
   });
 
+  it('accepts open-meeting-tab requests and results', () => {
+    expect(isRuntimeMessage({ type: 'OPEN_MEETING_TAB', payload: { meetingId: 'meeting-A' } })).toBe(true);
+    expect(isRuntimeMessage({ type: 'MEETING_TAB_OPENED', payload: { meetingId: 'meeting-A', ok: true } })).toBe(true);
+    expect(isRuntimeMessage({ type: 'OPEN_MEETING_TAB', payload: {} })).toBe(false);
+  });
+
   it('accepts speaker-turn messages carrying a finalized flag', () => {
     expect(isRuntimeMessage({
       type: 'TRANSCRIPT_TURN',

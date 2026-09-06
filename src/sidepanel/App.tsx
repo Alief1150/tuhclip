@@ -358,6 +358,22 @@ export function App() {
   const hasTranscript = segments.length > 0 || activeCaption !== null;
 
   const backgroundActive = !signals?.onMeet && !!signals?.backgroundMeetingId;
+  const displayedSession = meeting ? activeSessions.find((session) => session.meetingId === meeting.id) ?? null : null;
+
+  const openDisplayedMeeting = useCallback(() => {
+    if (!meeting) return;
+    void chrome.runtime.sendMessage({ type: 'OPEN_MEETING_TAB', payload: { meetingId: meeting.id } } satisfies RuntimeMessage)
+      .then((response: unknown) => {
+        const opened = isRuntimeMessage(response) && response.type === 'MEETING_TAB_OPENED' && response.payload.ok;
+        if (!opened) {
+          toastManager.add({ title: 'Meet tab unavailable', description: 'The tab may have been closed.', type: 'warning' });
+          void refresh();
+        }
+      })
+      .catch(() => {
+        toastManager.add({ title: 'Meet tab unavailable', description: 'The tab may have been closed.', type: 'warning' });
+      });
+  }, [meeting, refresh]);
   const statusBadge = (() => {
     if (!signals || error) {
       return backgroundActive ? <StatusBadge state="background" /> : <StatusBadge state="connecting" />;
@@ -392,9 +408,16 @@ export function App() {
             <section aria-live="polite" className="flex min-h-0 flex-1 flex-col gap-2 rounded-lg border bg-background p-3 shadow-xs">
               <div className="flex items-center justify-between gap-2">
                 {statusBadge}
-                {meeting && segments.length > 0 && (
-                  <ExportMenu label="Export current transcript" onExport={exportCurrent} />
-                )}
+                <div className="flex items-center gap-1.5">
+                  {displayedSession && (
+                    <Button variant="outline" size="sm" onClick={openDisplayedMeeting} aria-label={`Open ${displayedSession.title || 'meeting'} in its tab`}>
+                      Open Meet ↗
+                    </Button>
+                  )}
+                  {meeting && segments.length > 0 && (
+                    <ExportMenu label="Export current transcript" onExport={exportCurrent} />
+                  )}
+                </div>
               </div>
               {activeSessions.length > 1 && (
                 <Menu>
@@ -408,7 +431,10 @@ export function App() {
                   <MenuPopup>
                     {activeSessions.map((session) => (
                       <MenuItem key={session.meetingId} onClick={() => void selectSession(session.meetingId, true)}>
-                        {session.title || session.meetCode || session.meetingId}
+                        <span className="flex flex-col">
+                          <span className="font-medium">{session.title || session.meetCode || session.meetingId}</span>
+                          <span className="text-xs text-muted-foreground">{session.meetCode}</span>
+                        </span>
                       </MenuItem>
                     ))}
                   </MenuPopup>

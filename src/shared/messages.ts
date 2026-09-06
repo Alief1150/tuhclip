@@ -36,6 +36,8 @@ export type RuntimeMessage =
     }
   | { type: 'GET_ACTIVE_SESSIONS' }
   | { type: 'ACTIVE_SESSIONS'; payload: { sessions: RuntimeSession[] } }
+  | { type: 'OPEN_MEETING_TAB'; payload: { meetingId: string } }
+  | { type: 'MEETING_TAB_OPENED'; payload: { meetingId: string; ok: boolean } }
   | { type: 'PING_CONTENT_SCRIPT' }
   | { type: 'PONG_CONTENT_SCRIPT'; payload: { meetCode: string; signal: MeetStateSignal } }
   | { type: 'SESSION_STATUS'; payload: SessionSignals }
@@ -87,6 +89,17 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
     || message.type === 'PING_CONTENT_SCRIPT'
     || message.type === 'GET_ACTIVE_SESSIONS') {
     return message.payload === undefined;
+  }
+  if (message.type === 'OPEN_MEETING_TAB') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && typeof (message.payload as Record<string, unknown>).meetingId === 'string';
+  }
+  if (message.type === 'MEETING_TAB_OPENED') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && typeof (message.payload as Record<string, unknown>).meetingId === 'string'
+      && typeof (message.payload as Record<string, unknown>).ok === 'boolean';
   }
   if (message.type === 'MEET_HEARTBEAT') {
     return !!message.payload
