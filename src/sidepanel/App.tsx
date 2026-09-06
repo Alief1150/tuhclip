@@ -10,6 +10,7 @@ import { listSegments, upsertSegment } from '../storage/segments';
 import type { TranscriptSegment } from '../transcript/types';
 import { deriveViewState } from './viewState';
 import { createSequentialPoll } from './poll';
+import { FollowTracker, isNearBottom, type FollowState } from './followLatest';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../ui/empty';
@@ -125,6 +126,28 @@ export function App() {
   const retry = useRef<() => void>(() => undefined);
   const meetingRef = useRef<MeetingSession | null>(null);
   meetingRef.current = meeting;
+  const followTracker = useRef(new FollowTracker());
+  const liveViewport = useRef<HTMLDivElement | null>(null);
+  const [follow, setFollow] = useState<FollowState>({ following: true, unseen: 0 });
+
+  const scrollLiveToBottom = useCallback((smooth: boolean) => {
+    const viewport = liveViewport.current;
+    if (!viewport) return;
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+  }, []);
+
+  const handleLiveScroll = useCallback((viewport: HTMLDivElement) => {
+    const id = meetingRef.current?.id;
+    if (!id) return;
+    setFollow(followTracker.current.onScroll(id, isNearBottom(viewport)));
+  }, []);
+
+  const jumpToLatest = useCallback(() => {
+    const id = meetingRef.current?.id;
+    if (!id) return;
+    scrollLiveToBottom(true);
+    setFollow(followTracker.current.jumpToLatest(id));
+  }, [scrollLiveToBottom]);
 
   const refresh = useCallback(async () => {
     try {
@@ -158,6 +181,12 @@ export function App() {
   }, [refreshHistory]);
 
   useEffect(() => {
+    const id = meeting?.id;
+    if (!id) return;
+    if (followTracker.current.forMeeting(id).following) scrollLiveToBottom(false);
+  }, [activeCaption, meeting?.id, scrollLiveToBottom]);
+
+  useEffect(() => {
     const onSignal = (raw: unknown) => {
       if (!isRuntimeMessage(raw)) return;
       if (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE') {
@@ -189,6 +218,7 @@ export function App() {
           setSegments([]);
           setActiveCaption(null);
           setViewing(null);
+          setFollow(followTracker.current.jumpToLatest(stored.id));
           void refreshHistory();
         }).catch((cause) => logger.error('Meeting create failed', cause));
         return;
@@ -205,13 +235,20 @@ export function App() {
         void upsertSegment(segment).then(() => {
           setActiveCaption(null);
           if (meetingRef.current?.id === segment.meetingId) {
+            let isNew = false;
             setSegments((previous) => {
               const index = previous.findIndex((entry) => entry.id === segment.id);
-              if (index === -1) return [...previous, segment];
+              if (index === -1) {
+                isNew = true;
+                return [...previous, segment];
+              }
               const next = [...previous];
               next[index] = segment;
               return next;
             });
+            const { shouldScroll, state } = followTracker.current.onNewItems(segment.meetingId, isNew ? 1 : 0);
+            setFollow(state);
+            if (shouldScroll) scrollLiveToBottom(false);
           }
           void refreshHistory();
         }).catch((cause) => logger.error('Segment persist failed', cause));
@@ -349,26 +386,39 @@ export function App() {
                   </EmptyHeader>
                 </Empty>
               ) : (
-                <ScrollArea className="min-h-0 flex-1">
-                  <ol className="flex flex-col">
-                    {segments.map((segment) => (
-                      <li key={segment.id} className="border-t border-border py-2 first:border-t-0 first:pt-0">
-                        <p className="text-xs font-semibold text-primary">
-                          {formatTime(segment.startedAt)} {segment.speaker}
-                        </p>
-                        <p className="text-sm leading-relaxed text-foreground">{segment.text}</p>
-                      </li>
-                    ))}
-                    {activeCaption && (
-                      <li aria-label="Current caption" className="mt-1 rounded-md border border-dashed border-primary bg-accent/60 px-2 py-2">
-                        <p className="text-xs font-semibold text-primary">
-                          {activeCaption.speaker} <span className="font-normal text-muted-foreground">speaking</span>
-                        </p>
-                        <p className="text-sm leading-relaxed text-foreground">{activeCaption.text}</p>
-                      </li>
-                    )}
-                  </ol>
-                </ScrollArea>
+                <div className="relative flex min-h-0 flex-1 flex-col">
+                  <ScrollArea
+                    className="min-h-0 flex-1"
+                    viewportRef={liveViewport}
+                    onViewportScroll={handleLiveScroll}
+                  >
+                    <ol className="flex flex-col">
+                      {segments.map((segment) => (
+                        <li key={segment.id} className="border-t border-border py-2 first:border-t-0 first:pt-0">
+                          <p className="text-xs font-semibold text-primary">
+                            {formatTime(segment.startedAt)} {segment.speaker}
+                          </p>
+                          <p className="text-sm leading-relaxed text-foreground">{segment.text}</p>
+                        </li>
+                      ))}
+                      {activeCaption && (
+                        <li aria-label="Current caption" className="mt-1 rounded-md border border-dashed border-primary bg-accent/60 px-2 py-2">
+                          <p className="text-xs font-semibold text-primary">
+                            {activeCaption.speaker} <span className="font-normal text-muted-foreground">speaking</span>
+                          </p>
+                          <p className="text-sm leading-relaxed text-foreground">{activeCaption.text}</p>
+                        </li>
+                      )}
+                    </ol>
+                  </ScrollArea>
+                  {!follow.following && follow.unseen > 0 && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+                      <Button size="sm" onClick={jumpToLatest} aria-label={`Jump to latest, ${follow.unseen} new transcript items`}>
+                        ↓ Latest · {follow.unseen} new
+                      </Button>
+                    </div>
+                  )}
+                </div>
               )}
             </section>
           </TabsPanel>
