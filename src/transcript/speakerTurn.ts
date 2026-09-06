@@ -1,4 +1,4 @@
-import { displayCleanup, normalizeForComparison } from './normalization';
+import { displayCleanup, mergeCumulative, normalizeForComparison } from './normalization';
 import { normalizeSpeakerName } from './transcriptEngine';
 import type { TranscriptSegment } from './types';
 
@@ -87,15 +87,9 @@ export class SpeakerTurnAggregator {
     const normalized = normalizeForComparison(text);
 
     if (this.open && normalizeSpeakerName(this.open.speaker) === normalizeSpeakerName(chunk.speaker)) {
-      const openNormalized = normalizeForComparison(this.open.text);
-      if (normalized === openNormalized) {
-        this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);
-        return { turn: { ...this.open }, created: false, reopened: false };
-      }
-      if (normalized.includes(openNormalized) || openNormalized.includes(normalized)) {
-        if (normalized.length >= openNormalized.length) {
-          this.open.text = text;
-        }
+      const merged = mergeCumulative(this.open.text, text);
+      if (merged !== null) {
+        this.open.text = merged;
         this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);
         return { turn: { ...this.open }, created: false, reopened: false };
       }
@@ -115,17 +109,19 @@ export class SpeakerTurnAggregator {
       if (normalized === finalizedNormalized && gap <= this.extensionMs) {
         return { turn: { ...this.lastFinalized }, created: false, reopened: false };
       }
-      if ((normalized.includes(finalizedNormalized) || finalizedNormalized.includes(normalized)) && gap <= this.extensionMs) {
+      const merged = mergeCumulative(this.lastFinalized.text, text);
+      if (merged !== null && merged !== this.lastFinalized.text && gap <= this.extensionMs) {
         this.open = { ...this.lastFinalized, finalized: false };
-        if (normalized.length >= finalizedNormalized.length) {
-          this.open.text = text;
-        }
+        this.open.text = merged;
         this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);
         this.finalized = this.finalized.filter((turn) => turn.id !== this.open?.id);
         this.lastFinalized = null;
         return { turn: { ...this.open }, created: false, reopened: true };
       }
-      if (gap <= this.continuationMs && !finalizedNormalized.includes(normalized) && !normalized.includes(finalizedNormalized)) {
+      if (merged !== null && gap <= this.extensionMs) {
+        return { turn: { ...this.lastFinalized }, created: false, reopened: false };
+      }
+      if (gap <= this.continuationMs && merged === null) {
         this.open = { ...this.lastFinalized, finalized: false };
         this.open.text = `${this.open.text} ${text}`;
         this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);

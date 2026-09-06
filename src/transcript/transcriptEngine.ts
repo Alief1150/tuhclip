@@ -1,6 +1,6 @@
 import type { CaptionObservation } from '../platforms/googleMeet/types';
 import { RecentDedupeCache } from './deduplication';
-import { displayCleanup, normalizeForComparison } from './normalization';
+import { displayCleanup, mergeCumulative, normalizeForComparison } from './normalization';
 import type { ActiveSegment, TranscriptSegment } from './types';
 
 export interface TranscriptEngineOptions {
@@ -89,17 +89,10 @@ export class TranscriptEngine {
     }
 
     if (observedLabel) this.current.speaker = observedLabel;
-    if (normalized === this.current.normalizedText) {
-      this.current.updatedAt = observation.observedAt;
-      if (observation.sourceId !== undefined) this.current.sourceId = observation.sourceId;
-      return;
-    }
-
-    if (normalized.includes(this.current.normalizedText) || this.current.normalizedText.includes(normalized)) {
-      if (normalized.length >= this.current.normalizedText.length) {
-        this.current.text = text;
-        this.current.normalizedText = normalized;
-      }
+    const merged = mergeCumulative(this.current.text, text);
+    if (merged !== null) {
+      this.current.text = merged;
+      this.current.normalizedText = normalizeForComparison(merged);
       this.current.updatedAt = observation.observedAt;
       if (observation.sourceId !== undefined) this.current.sourceId = observation.sourceId;
       return;

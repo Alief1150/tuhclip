@@ -39,6 +39,26 @@ describe('SpeakerTurnAggregator', () => {
     expect(turns.finalizedTurns[0].text).toBe(text);
   });
 
+  it('merges a rolling caption window without repetition', () => {
+    const turns = new SpeakerTurnAggregator({ meetingId: 'm1' });
+    turns.ingestChunk(chunk('Alief', 'A B C D E', 0, 500));
+    const result = turns.ingestChunk(chunk('Alief', 'C D E F', 600, 1100));
+    expect(result.created).toBe(false);
+    expect(turns.openTurn?.text).toBe('A B C D E F');
+    turns.finalizeOpen(2000);
+    expect(turns.finalizedTurns).toHaveLength(1);
+  });
+
+  it('ignores re-emitted stale rows from a full-region rescan', () => {
+    const turns = new SpeakerTurnAggregator({ meetingId: 'm1' });
+    turns.ingestChunk(chunk('Alief', 'A B C', 0, 500));
+    const result = turns.ingestChunk(chunk('Alief', 'A B', 600, 1100));
+    expect(result.created).toBe(false);
+    expect(turns.openTurn?.text).toBe('A B C');
+    turns.finalizeOpen(2000);
+    expect(turns.finalizedTurns).toHaveLength(1);
+  });
+
   it('TEST B: keeps same-speaker chunks across a short pause in one turn', () => {
     const turns = new SpeakerTurnAggregator({ meetingId: 'm1' });
     turns.ingestChunk(chunk('Alief', 'saya ingin bertanya', 0, 1000));

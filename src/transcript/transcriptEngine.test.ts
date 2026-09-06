@@ -128,6 +128,15 @@ describe('TranscriptEngine', () => {
     expect(engine.finalized[0].text).toBe('halo bandung sudah lama');
   });
 
+  it('merges a rolling caption window without repetition', () => {
+    const engine = new TranscriptEngine({ meetingId: 'm1', meetingStart: 0 });
+    engine.ingest(observation('Alief', 'A B C D E', 0));
+    engine.ingest(observation('Alief', 'C D E F', 500));
+    engine.finalizeActive(1000);
+    expect(engine.finalized).toHaveLength(1);
+    expect(engine.finalized[0].text).toBe('A B C D E F');
+  });
+
   it('inherits the active speaker when the label temporarily disappears', () => {
     const engine = new TranscriptEngine({ meetingId: 'm1', meetingStart: 0 });
     engine.ingest(observation('Alief', 'halo', 0));
