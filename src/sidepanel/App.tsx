@@ -419,6 +419,17 @@ export function App() {
                   )}
                 </div>
               </div>
+              {signals?.captionsOff && (
+                <div role="alert" className="rounded-md border border-warning bg-warning/10 px-2.5 py-2">
+                  <p className="text-sm font-semibold text-warning-foreground">Captions are off</p>
+                  <p className="text-xs text-muted-foreground">
+                    Turn on Google Meet captions (CC) to continue transcription. Your stored transcript is kept.
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    How to enable: in the Meet toolbar, click More options (⋮), then Turn on captions.
+                  </p>
+                </div>
+              )}
               {activeSessions.length > 1 && (
                 <Menu>
                   <MenuTrigger

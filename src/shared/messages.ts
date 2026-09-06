@@ -3,6 +3,7 @@ export type SessionSignals = {
   contentReady: boolean;
   contentMissing: boolean;
   backgroundMeetingId: string | null;
+  captionsOff: boolean;
   lifecycle: MeetingLifecycle;
 };
 
@@ -29,6 +30,10 @@ export type RuntimeMessage =
   | {
       type: 'SESSION_ENDED';
       payload: { meetingId: string; endedAt: number };
+    }
+  | {
+      type: 'CAPTIONS_OFF';
+      payload: { meetingId: string; since: number };
     }
   | {
       type: 'MEET_HEARTBEAT';
@@ -60,6 +65,7 @@ const isSignals = (value: unknown): value is SessionSignals => {
     && typeof signals.contentReady === 'boolean'
     && typeof signals.contentMissing === 'boolean'
     && (signals.backgroundMeetingId === null || typeof signals.backgroundMeetingId === 'string')
+    && typeof signals.captionsOff === 'boolean'
     && isLifecycle(signals.lifecycle);
 };
 
@@ -148,6 +154,12 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
   }
   if (message.type === 'MEETING_SESSION') return isMeetingSession(message.payload);
   if (message.type === 'MEETING_STARTED') return isMeetingStarted(message.payload);
+  if (message.type === 'CAPTIONS_OFF') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && typeof (message.payload as Record<string, unknown>).meetingId === 'string'
+      && typeof (message.payload as Record<string, unknown>).since === 'number';
+  }
   if (message.type === 'SESSION_ENDED') {
     return !!message.payload
       && typeof message.payload === 'object'
@@ -175,6 +187,7 @@ const isRuntimeSession = (value: unknown): value is RuntimeSession => {
     && typeof session.startedAt === 'number'
     && typeof session.lastSeenAt === 'number'
     && typeof session.reconnectCount === 'number'
+    && typeof session.captionsOff === 'boolean'
     && (session.status === 'active' || session.status === 'disconnected' || session.status === 'ended');
 };
 

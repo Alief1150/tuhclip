@@ -12,6 +12,7 @@ export interface RuntimeSession {
   disconnectedAt?: number;
   reconnectCount: number;
   status: RuntimeSessionStatus;
+  captionsOff: boolean;
 }
 
 export interface Heartbeat {
@@ -54,6 +55,7 @@ export class SessionManager {
       lastSeenAt: heartbeat.now,
       reconnectCount: 0,
       status: 'active',
+      captionsOff: false,
     };
     this.sessions.set(heartbeat.meetingId, session);
     return { ...session };
@@ -76,6 +78,19 @@ export class SessionManager {
   get(meetingId: string): RuntimeSession | null {
     const session = this.sessions.get(meetingId);
     return session ? { ...session } : null;
+  }
+
+  getByTab(tabId: number): RuntimeSession | null {
+    for (const session of this.sessions.values()) {
+      if (session.tabId === tabId) return { ...session };
+    }
+    return null;
+  }
+
+  setCaptionsOff(meetingId: string, off: boolean): void {
+    const session = this.sessions.get(meetingId);
+    if (!session) return;
+    session.captionsOff = off;
   }
 
   resolveMeetingTab(meetingId: string): { tabId: number; windowId: number } | null {

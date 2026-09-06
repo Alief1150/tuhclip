@@ -5,12 +5,12 @@ describe('isRuntimeMessage', () => {
   it('accepts a complete session status message', () => {
     expect(isRuntimeMessage({
       type: 'SESSION_STATUS',
-      payload: { onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, lifecycle: 'waiting' },
+      payload: { onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, captionsOff: false, lifecycle: 'waiting' },
     })).toBe(true);
   });
 
   it('rejects malformed runtime data', () => {
-    expect(isRuntimeMessage({ type: 'SESSION_STATUS', payload: { onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, lifecycle: 'paused' } })).toBe(false);
+    expect(isRuntimeMessage({ type: 'SESSION_STATUS', payload: { onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, captionsOff: false, lifecycle: 'paused' } })).toBe(false);
     expect(isRuntimeMessage(null)).toBe(false);
   });
 
@@ -61,7 +61,7 @@ describe('isRuntimeMessage', () => {
       type: 'ACTIVE_SESSIONS',
       payload: { sessions: [{
         meetingId: 'meeting-A', meetCode: 'aaa-bbbb-ccc', meetUrl: 'https://meet.google.com/aaa-bbbb-ccc',
-        tabId: 101, windowId: 1, title: 'Kelas', startedAt: 1, lastSeenAt: 2, reconnectCount: 0, status: 'active',
+        tabId: 101, windowId: 1, title: 'Kelas', startedAt: 1, lastSeenAt: 2, reconnectCount: 0, status: 'active', captionsOff: false,
       }] },
     })).toBe(true);
     expect(isRuntimeMessage({
@@ -74,6 +74,14 @@ describe('isRuntimeMessage', () => {
     expect(isRuntimeMessage({ type: 'OPEN_MEETING_TAB', payload: { meetingId: 'meeting-A' } })).toBe(true);
     expect(isRuntimeMessage({ type: 'MEETING_TAB_OPENED', payload: { meetingId: 'meeting-A', ok: true } })).toBe(true);
     expect(isRuntimeMessage({ type: 'OPEN_MEETING_TAB', payload: {} })).toBe(false);
+  });
+
+  it('accepts captions-off signals with meeting identity', () => {
+    expect(isRuntimeMessage({
+      type: 'CAPTIONS_OFF',
+      payload: { meetingId: 'meeting-A', since: 100 },
+    })).toBe(true);
+    expect(isRuntimeMessage({ type: 'CAPTIONS_OFF', payload: { meetingId: 'meeting-A' } })).toBe(false);
   });
 
   it('accepts speaker-turn messages carrying a finalized flag', () => {

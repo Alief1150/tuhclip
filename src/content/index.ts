@@ -2,6 +2,7 @@ import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
 import { extractMeetCode } from '../background/contentHealth';
 import { createCaptionObserver } from '../platforms/googleMeet/captionObserver';
 import type { MeetStateSignal } from '../platforms/googleMeet/types';
+import { CAPTION_OFF_GRACE_MS } from '../shared/constants';
 import { createLogger } from '../shared/logger';
 import { TranscriptEngine } from '../transcript/transcriptEngine';
 import { SpeakerTurnAggregator, type SpeakerTurn } from '../transcript/speakerTurn';
@@ -116,12 +117,29 @@ async function init(): Promise<void> {
 
   const inactivityTimer = window.setInterval(flushFinalized, 1000);
 
+  let captionsOffTimer: number | undefined;
+  let captionsOffSent = false;
+
   const observer = createCaptionObserver({
     onState: (next) => {
       const previous = signal;
       signal = next;
+      if (next === 'CAPTIONS_ACTIVE') {
+        if (captionsOffTimer !== undefined) {
+          window.clearTimeout(captionsOffTimer);
+          captionsOffTimer = undefined;
+        }
+        captionsOffSent = false;
+      }
       if ((next === 'CAPTIONS_INACTIVE' || next === 'CAPTIONS_WAITING') && previous === 'CAPTIONS_ACTIVE') {
         absorbChunk(engine.captionGone(Date.now()));
+        if (captionsOffTimer === undefined && !captionsOffSent) {
+          captionsOffTimer = window.setTimeout(() => {
+            captionsOffTimer = undefined;
+            captionsOffSent = true;
+            safeSend({ type: 'CAPTIONS_OFF', payload: { meetingId, since: Date.now() } });
+          }, CAPTION_OFF_GRACE_MS);
+        }
       }
       safeSend({ type: next });
     },
@@ -139,6 +157,7 @@ async function init(): Promise<void> {
   window.addEventListener('pagehide', () => {
     window.clearInterval(inactivityTimer);
     window.clearInterval(heartbeatTimer);
+    if (captionsOffTimer !== undefined) window.clearTimeout(captionsOffTimer);
     absorbChunk(engine.meetingEnded(Date.now()));
     safeSend({ type: 'SESSION_ENDED', payload: { meetingId, endedAt: Date.now() } });
     const closing = turns.finalizeOpen(Date.now());

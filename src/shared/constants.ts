@@ -1,0 +1,2 @@
+export const CAPTION_OFF_GRACE_MS = 5000;
+export const CONTENT_HEARTBEAT_MS = 15_000;

@@ -9,7 +9,7 @@ describe('resolveSessionStatus', () => {
       return { signal: 'CAPTIONS_WAITING' };
     });
 
-    expect(status).toEqual({ onMeet: false, contentReady: false, contentMissing: false, backgroundMeetingId: null, lifecycle: 'waiting' });
+    expect(status).toEqual({ onMeet: false, contentReady: false, contentMissing: false, backgroundMeetingId: null, captionsOff: false, lifecycle: 'waiting' });
     expect(contacted).toBe(false);
   });
 
@@ -19,7 +19,7 @@ describe('resolveSessionStatus', () => {
       async (tabId) => tabId === 7 ? { signal: 'CAPTIONS_ACTIVE' } : null,
     );
 
-    expect(status).toEqual({ onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, lifecycle: 'active' });
+    expect(status).toEqual({ onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, captionsOff: false, lifecycle: 'active' });
   });
 
   it('maps inactive captions to an ended lifecycle', async () => {
@@ -27,7 +27,18 @@ describe('resolveSessionStatus', () => {
       { id: 7, url: 'https://meet.google.com/abc-defg-hij' },
       async () => ({ signal: 'CAPTIONS_INACTIVE' }),
     );
-    expect(status).toEqual({ onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, lifecycle: 'ended' });
+    expect(status).toEqual({ onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, captionsOff: false, lifecycle: 'ended' });
+  });
+
+  it('reports captions-off for the active tab meeting', async () => {
+    const status = await resolveSessionStatus(
+      { id: 7, url: 'https://meet.google.com/abc-defg-hij' },
+      async () => ({ signal: 'CAPTIONS_INACTIVE' }),
+      async () => undefined,
+      async (tabId) => tabId === 7,
+    );
+    expect(status.captionsOff).toBe(true);
+    expect(status.lifecycle).toBe('ended');
   });
 
   it('reports Meet detected when the active document cannot respond', async () => {
@@ -36,7 +47,7 @@ describe('resolveSessionStatus', () => {
       async () => null,
     );
 
-    expect(status).toEqual({ onMeet: true, contentReady: false, contentMissing: false, backgroundMeetingId: null, lifecycle: 'waiting' });
+    expect(status).toEqual({ onMeet: true, contentReady: false, contentMissing: false, backgroundMeetingId: null, captionsOff: false, lifecycle: 'waiting' });
   });
 
   it('self-heals a missing content script by injecting once and re-reading', async () => {
@@ -55,7 +66,7 @@ describe('resolveSessionStatus', () => {
     );
 
     expect(heals).toBe(1);
-    expect(status).toEqual({ onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, lifecycle: 'waiting' });
+    expect(status).toEqual({ onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, captionsOff: false, lifecycle: 'waiting' });
   });
 
   it('reports content missing when healing fails', async () => {
@@ -69,6 +80,6 @@ describe('resolveSessionStatus', () => {
       },
     );
 
-    expect(status).toEqual({ onMeet: true, contentReady: false, contentMissing: true, backgroundMeetingId: null, lifecycle: 'waiting' });
+    expect(status).toEqual({ onMeet: true, contentReady: false, contentMissing: true, backgroundMeetingId: null, captionsOff: false, lifecycle: 'waiting' });
   });
 });

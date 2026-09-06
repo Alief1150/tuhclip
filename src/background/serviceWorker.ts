@@ -43,7 +43,7 @@ async function healContentScript(tabId: number): Promise<void> {
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!isRuntimeMessage(raw)) return false;
 
-  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY' || raw.type === 'SESSION_ENDED' || raw.type === 'MEET_HEARTBEAT')) {
+  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY' || raw.type === 'SESSION_ENDED' || raw.type === 'MEET_HEARTBEAT' || raw.type === 'CAPTIONS_OFF')) {
     logger.debug('Message arrived from Meet tab', raw.type);
     if (raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN') {
       lastBackgroundTurn = { meetingId: raw.payload.meetingId, at: Date.now() };
@@ -84,6 +84,13 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     if (raw.type === 'SESSION_ENDED') {
       void endMeeting(raw.payload.meetingId, raw.payload.endedAt).catch((error) => logger.debug('Background meeting end failed', error));
       sessions.markDisconnected(raw.payload.meetingId, raw.payload.endedAt);
+    }
+    if (raw.type === 'CAPTIONS_OFF') {
+      sessions.setCaptionsOff(raw.payload.meetingId, true);
+    }
+    if (raw.type === 'CAPTIONS_ACTIVE' && sender.tab?.id !== undefined) {
+      const session = sessions.getByTab(sender.tab.id);
+      if (session) sessions.setCaptionsOff(session.meetingId, false);
     }
     if (raw.type === 'MEET_HEARTBEAT') {
       sessions.registerOrHeartbeat({
@@ -159,7 +166,9 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (raw.type !== 'GET_SESSION_STATUS') return false;
 
   chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
-    return resolveSessionStatus(tab, readContentStatus, healContentScript);
+    return resolveSessionStatus(tab, readContentStatus, healContentScript, async (tabId) => {
+      return sessions.getByTab(tabId)?.captionsOff ?? false;
+    });
   }).then((payload) => {
     const backgroundMeetingId = lastBackgroundTurn && Date.now() - lastBackgroundTurn.at <= BACKGROUND_RECENT_MS
       ? lastBackgroundTurn.meetingId

@@ -88,6 +88,19 @@ describe('SessionManager', () => {
     expect(manager.resolveMeetingTab('meeting-A')).toBeNull();
   });
 
+  it('tracks captions-off per session without touching others', () => {
+    const manager = new SessionManager();
+    manager.registerOrHeartbeat(heartbeatA());
+    manager.registerOrHeartbeat(heartbeatB());
+    manager.setCaptionsOff('meeting-A', true);
+    expect(manager.get('meeting-A')?.captionsOff).toBe(true);
+    expect(manager.get('meeting-B')?.captionsOff).toBe(false);
+    expect(manager.getByTab(101)?.meetingId).toBe('meeting-A');
+    expect(manager.getByTab(999)).toBeNull();
+    manager.setCaptionsOff('meeting-A', false);
+    expect(manager.get('meeting-A')?.captionsOff).toBe(false);
+  });
+
   it('prunes only old ended sessions', () => {
     const manager = new SessionManager();
     manager.registerOrHeartbeat(heartbeatA());
