@@ -57,12 +57,20 @@ function formatDuration(durationMs?: number): string {
   return `${minutes} min`;
 }
 
-function StatusBadge({ state }: { state: 'transcribing' | 'waiting' | 'connecting' | 'reconnecting' | 'idle' }) {
+function StatusBadge({ state }: { state: 'transcribing' | 'background' | 'waiting' | 'connecting' | 'reconnecting' | 'idle' }) {
   if (state === 'transcribing') {
     return (
       <Badge variant="success">
         <span aria-hidden="true" className="size-1.5 rounded-full bg-success-foreground" />
         Transcribing
+      </Badge>
+    );
+  }
+  if (state === 'background') {
+    return (
+      <Badge variant="success">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-success-foreground" />
+        Transcribing in background
       </Badge>
     );
   }
@@ -181,6 +189,24 @@ export function App() {
   }, [refreshHistory]);
 
   useEffect(() => {
+    let cancelled = false;
+    void listMeetings().then((meetings) => {
+      if (cancelled || meetingRef.current) return;
+      const live = meetings.find((entry) => entry.endedAt === undefined) ?? meetings[0];
+      if (!live) return;
+      void listSegments(live.id).then((stored) => {
+        if (cancelled || meetingRef.current) return;
+        setMeeting(live);
+        setSegments(stored);
+        setFollow(followTracker.current.jumpToLatest(live.id));
+      }).catch((cause) => logger.error('Live transcript restore failed', cause));
+    }).catch((cause) => logger.error('Live meeting restore failed', cause));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const id = meeting?.id;
     if (!id) return;
     if (followTracker.current.forMeeting(id).following) scrollLiveToBottom(false);
@@ -297,10 +323,15 @@ export function App() {
   const state = signals ? deriveViewState(signals) : null;
   const hasTranscript = segments.length > 0 || activeCaption !== null;
 
+  const backgroundActive = !signals?.onMeet && !!signals?.backgroundMeetingId;
   const statusBadge = (() => {
-    if (!signals || error) return <StatusBadge state="connecting" />;
+    if (!signals || error) {
+      return backgroundActive ? <StatusBadge state="background" /> : <StatusBadge state="connecting" />;
+    }
     if (signals.contentMissing) return <StatusBadge state="reconnecting" />;
-    if (!signals.contentReady) return <StatusBadge state="connecting" />;
+    if (!signals.contentReady) {
+      return backgroundActive ? <StatusBadge state="background" /> : <StatusBadge state="connecting" />;
+    }
     if (state === 'transcribing' || hasTranscript) return <StatusBadge state="transcribing" />;
     if (state === 'idle') return <StatusBadge state="idle" />;
     return <StatusBadge state="waiting" />;
@@ -358,7 +389,7 @@ export function App() {
                   </EmptyHeader>
                   <Button size="sm" onClick={() => retry.current()}>Retry connection</Button>
                 </Empty>
-              ) : state === 'not-on-meet' ? (
+              ) : state === 'not-on-meet' && !backgroundActive ? (
                 <Empty className="py-8">
                   <EmptyHeader>
                     <EmptyTitle>Open a Google Meet tab</EmptyTitle>
@@ -366,7 +397,7 @@ export function App() {
                   </EmptyHeader>
                   <Button size="sm" onClick={() => retry.current()}>Check active tab</Button>
                 </Empty>
-              ) : state === 'meet-detected' ? (
+              ) : state === 'meet-detected' && !backgroundActive ? (
                 <Empty className="py-8">
                   <EmptyHeader>
                     <Spinner className="mb-2" />

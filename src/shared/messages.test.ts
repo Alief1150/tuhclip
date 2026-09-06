@@ -5,12 +5,12 @@ describe('isRuntimeMessage', () => {
   it('accepts a complete session status message', () => {
     expect(isRuntimeMessage({
       type: 'SESSION_STATUS',
-      payload: { onMeet: true, contentReady: true, contentMissing: false, lifecycle: 'waiting' },
+      payload: { onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, lifecycle: 'waiting' },
     })).toBe(true);
   });
 
   it('rejects malformed runtime data', () => {
-    expect(isRuntimeMessage({ type: 'SESSION_STATUS', payload: { onMeet: true, contentReady: true, contentMissing: false, lifecycle: 'paused' } })).toBe(false);
+    expect(isRuntimeMessage({ type: 'SESSION_STATUS', payload: { onMeet: true, contentReady: true, contentMissing: false, backgroundMeetingId: null, lifecycle: 'paused' } })).toBe(false);
     expect(isRuntimeMessage(null)).toBe(false);
   });
 

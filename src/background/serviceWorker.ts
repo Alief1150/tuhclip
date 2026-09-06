@@ -1,12 +1,16 @@
 import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
 import { createLogger } from '../shared/logger';
-import { getOrResumeMeeting } from '../storage/meetings';
+import { createMeeting, endMeeting, getOrResumeMeeting, meetingTitleFallback } from '../storage/meetings';
+import { upsertSegment } from '../storage/segments';
 import { createInjectionTracker, isMissingReceiverError } from './contentHealth';
 import { shouldRelayToExtension } from './messageRelay';
 import { resolveSessionStatus } from './sessionStatus';
 
 const logger = createLogger('background');
 const injections = createInjectionTracker();
+let lastBackgroundTurn: { meetingId: string; at: number } | null = null;
+
+const BACKGROUND_RECENT_MS = 5 * 60 * 1000;
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
@@ -37,8 +41,25 @@ async function healContentScript(tabId: number): Promise<void> {
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!isRuntimeMessage(raw)) return false;
 
-  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY')) {
+  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY' || raw.type === 'SESSION_ENDED')) {
     logger.debug('Message arrived from Meet tab', raw.type);
+    if (raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN') {
+      lastBackgroundTurn = { meetingId: raw.payload.meetingId, at: Date.now() };
+      void upsertSegment(raw.payload).catch((error) => logger.debug('Background persist failed', error));
+    }
+    if (raw.type === 'MEETING_STARTED') {
+      lastBackgroundTurn = { meetingId: raw.payload.meetingId, at: Date.now() };
+      void createMeeting({
+        id: raw.payload.meetingId,
+        title: raw.payload.title.trim() || meetingTitleFallback(raw.payload.startedAt),
+        meetUrl: raw.payload.meetUrl,
+        startedAt: raw.payload.startedAt,
+        createdAt: Date.now(),
+      }).catch((error) => logger.debug('Background meeting create failed', error));
+    }
+    if (raw.type === 'SESSION_ENDED') {
+      void endMeeting(raw.payload.meetingId, raw.payload.endedAt).catch((error) => logger.debug('Background meeting end failed', error));
+    }
     chrome.tabs.query({ active: true, currentWindow: true }).then(([activeTab]) => {
       if (shouldRelayToExtension(raw, sender.tab ?? {}, activeTab)) {
         return chrome.runtime.sendMessage(raw);
@@ -71,7 +92,10 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
     return resolveSessionStatus(tab, readContentStatus, healContentScript);
   }).then((payload) => {
-    sendResponse({ type: 'SESSION_STATUS', payload } satisfies RuntimeMessage);
+    const backgroundMeetingId = lastBackgroundTurn && Date.now() - lastBackgroundTurn.at <= BACKGROUND_RECENT_MS
+      ? lastBackgroundTurn.meetingId
+      : null;
+    sendResponse({ type: 'SESSION_STATUS', payload: { ...payload, backgroundMeetingId } } satisfies RuntimeMessage);
   });
   return true;
 });

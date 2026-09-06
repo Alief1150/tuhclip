@@ -2,6 +2,7 @@ export type SessionSignals = {
   onMeet: boolean;
   contentReady: boolean;
   contentMissing: boolean;
+  backgroundMeetingId: string | null;
   lifecycle: MeetingLifecycle;
 };
 
@@ -19,6 +20,10 @@ export type RuntimeMessage =
   | {
       type: 'MEETING_SESSION';
       payload: { meetingId: string; startedAt: number; resumed: boolean };
+    }
+  | {
+      type: 'SESSION_ENDED';
+      payload: { meetingId: string; endedAt: number };
     }
   | { type: 'PING_CONTENT_SCRIPT' }
   | { type: 'PONG_CONTENT_SCRIPT'; payload: { meetCode: string; signal: MeetStateSignal } }
@@ -41,6 +46,7 @@ const isSignals = (value: unknown): value is SessionSignals => {
   return typeof signals.onMeet === 'boolean'
     && typeof signals.contentReady === 'boolean'
     && typeof signals.contentMissing === 'boolean'
+    && (signals.backgroundMeetingId === null || typeof signals.backgroundMeetingId === 'string')
     && isLifecycle(signals.lifecycle);
 };
 
@@ -103,6 +109,12 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
       && typeof (message.payload as unknown as Record<string, unknown>).finalized === 'boolean';
   }
   if (message.type === 'MEETING_STARTED') return isMeetingStarted(message.payload);
+  if (message.type === 'SESSION_ENDED') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && typeof (message.payload as Record<string, unknown>).meetingId === 'string'
+      && typeof (message.payload as Record<string, unknown>).endedAt === 'number';
+  }
   return message.type === 'SESSION_STATUS' && isSignals(message.payload);
 }
 import type { CaptionObservation, MeetStateSignal } from '../platforms/googleMeet/types';

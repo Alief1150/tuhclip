@@ -121,6 +121,7 @@ async function init(): Promise<void> {
   window.addEventListener('pagehide', () => {
     window.clearInterval(inactivityTimer);
     absorbChunk(engine.meetingEnded(Date.now()));
+    safeSend({ type: 'SESSION_ENDED', payload: { meetingId, endedAt: Date.now() } });
     const closing = turns.finalizeOpen(Date.now());
     if (closing) emitTurn(closing);
     observer.stop();

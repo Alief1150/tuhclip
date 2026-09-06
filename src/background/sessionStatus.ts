@@ -13,7 +13,7 @@ const lifecycleBySignal = {
   CAPTIONS_INACTIVE: 'ended',
 } as const;
 
-const missing: SessionSignals = { onMeet: true, contentReady: false, contentMissing: true, lifecycle: 'waiting' };
+const missing: SessionSignals = { onMeet: true, contentReady: false, contentMissing: true, backgroundMeetingId: null, lifecycle: 'waiting' };
 
 export async function resolveSessionStatus(
   tab: Tab,
@@ -22,23 +22,24 @@ export async function resolveSessionStatus(
 ): Promise<SessionSignals> {
   const onMeet = tab?.url?.startsWith('https://meet.google.com/') ?? false;
   if (!onMeet || tab?.id === undefined) {
-    return { onMeet, contentReady: false, contentMissing: false, lifecycle: 'waiting' };
+    return { onMeet, contentReady: false, contentMissing: false, backgroundMeetingId: null, lifecycle: 'waiting' };
   }
 
   try {
     const content = await readContentStatus(tab.id);
     if (!content) {
-      return { onMeet: true, contentReady: false, contentMissing: false, lifecycle: 'waiting' };
+      return { onMeet: true, contentReady: false, contentMissing: false, backgroundMeetingId: null, lifecycle: 'waiting' };
     }
     return {
       onMeet: true,
       contentReady: true,
       contentMissing: false,
+      backgroundMeetingId: null,
       lifecycle: lifecycleBySignal[content.signal],
     };
   } catch (error) {
     if (!isMissingReceiverError(error)) {
-      return { onMeet: true, contentReady: false, contentMissing: false, lifecycle: 'waiting' };
+      return { onMeet: true, contentReady: false, contentMissing: false, backgroundMeetingId: null, lifecycle: 'waiting' };
     }
     try {
       await healContentScript(tab.id);
@@ -48,6 +49,7 @@ export async function resolveSessionStatus(
         onMeet: true,
         contentReady: true,
         contentMissing: false,
+        backgroundMeetingId: null,
         lifecycle: lifecycleBySignal[content.signal],
       };
     } catch {
