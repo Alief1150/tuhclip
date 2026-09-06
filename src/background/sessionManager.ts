@@ -98,4 +98,18 @@ export class SessionManager {
       }
     }
   }
+
+  sweepStale(now: number, resumeWindowMs: number): string[] {
+    const newlyEnded: string[] = [];
+    for (const session of this.sessions.values()) {
+      if (session.status === 'disconnected'
+        && session.disconnectedAt !== undefined
+        && now - session.disconnectedAt > resumeWindowMs) {
+        session.status = 'ended';
+        session.lastSeenAt = now;
+        newlyEnded.push(session.meetingId);
+      }
+    }
+    return newlyEnded;
+  }
 }

@@ -1,4 +1,13 @@
 import { storeGet, storeGetAll, storePut } from './db';
+import { listSegments } from './segments';
+import type { TranscriptSegment } from '../transcript/types';
+
+export interface RecentTurnSummary {
+  id: string;
+  speaker: string;
+  text: string;
+  endedAt: number;
+}
 
 export interface MeetingSession {
   id: string;
@@ -11,17 +20,25 @@ export interface MeetingSession {
   createdAt: number;
 }
 
-export const MEETING_RESUME_WINDOW_MS = 4 * 60 * 60 * 1000;
+export const SESSION_RESUME_WINDOW_MS = 10 * 60 * 1000;
+export const MEETING_RESUME_WINDOW_MS = SESSION_RESUME_WINDOW_MS;
 
 export function meetingIdForCode(meetCode: string): string {
   return `meet-${meetCode}`;
+}
+
+async function recentTurnFor(meetingId: string): Promise<RecentTurnSummary | null> {
+  const segments: TranscriptSegment[] = await listSegments(meetingId).catch(() => []);
+  if (segments.length === 0) return null;
+  const latest = segments.reduce((a, b) => (b.endedAt >= a.endedAt ? b : a));
+  return { id: latest.id, speaker: latest.speaker, text: latest.text, endedAt: latest.endedAt };
 }
 
 export async function getOrResumeMeeting(
   meetCode: string,
   info: { title: string; meetUrl: string },
   now: number = Date.now(),
-): Promise<{ meeting: MeetingSession; resumed: boolean }> {
+): Promise<{ meeting: MeetingSession; resumed: boolean; recentTurn: RecentTurnSummary | null }> {
   const fallbackTitle = info.title.trim() || meetingTitleFallback(now);
   if (!meetCode) {
     const fresh: MeetingSession = {
@@ -32,11 +49,15 @@ export async function getOrResumeMeeting(
       createdAt: now,
     };
     await storePut('meetings', fresh);
-    return { meeting: fresh, resumed: false };
+    return { meeting: fresh, resumed: false, recentTurn: null };
   }
   const existing = await getMeeting(meetingIdForCode(meetCode)).catch(() => null);
   if (existing && now - existing.startedAt <= MEETING_RESUME_WINDOW_MS) {
-    return { meeting: existing, resumed: true };
+    const reopened: MeetingSession = { ...existing };
+    delete reopened.endedAt;
+    delete reopened.durationMs;
+    await storePut('meetings', reopened);
+    return { meeting: reopened, resumed: true, recentTurn: await recentTurnFor(existing.id) };
   }
   const meeting: MeetingSession = {
     id: existing ? `meet-${meetCode}-${now.toString(36)}` : meetingIdForCode(meetCode),
@@ -47,7 +68,7 @@ export async function getOrResumeMeeting(
     createdAt: now,
   };
   await storePut('meetings', meeting);
-  return { meeting, resumed: false };
+  return { meeting, resumed: false, recentTurn: null };
 }
 
 export interface MeetingHistoryEntry extends MeetingSession {

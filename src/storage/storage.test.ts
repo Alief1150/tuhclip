@@ -1,8 +1,8 @@
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { closeDatabase, deleteDatabase } from './db';
-import { createMeeting, endMeeting, listMeetings } from './meetings';
-import { addSegment, listSegments } from './segments';
+import { createMeeting, endMeeting, getOrResumeMeeting, listMeetings } from './meetings';
+import { addSegment, listSegments, upsertSegment } from './segments';
 import { readSetting, writeSetting } from './settings';
 
 afterEach(async () => {
@@ -58,6 +58,38 @@ describe('storage', () => {
     expect(await readSetting('unknown-key')).toBeNull();
     await writeSetting('theme', 'light');
     expect(await readSetting('theme')).toBe('light');
+  });
+
+  it('reuses the meeting inside the resume window and clears the ended state', async () => {
+    const first = await getOrResumeMeeting('aaa-bbbb-ccc', { title: 'Call', meetUrl: 'https://meet.google.com/aaa-bbbb-ccc' }, 1000);
+    expect(first.resumed).toBe(false);
+    await endMeeting(first.meeting.id, 2000);
+    const resumed = await getOrResumeMeeting('aaa-bbbb-ccc', { title: 'Call', meetUrl: 'https://meet.google.com/aaa-bbbb-ccc' }, 1000 + 5 * 60_000);
+    expect(resumed.resumed).toBe(true);
+    expect(resumed.meeting.id).toBe(first.meeting.id);
+    expect(resumed.meeting.endedAt).toBeUndefined();
+  });
+
+  it('starts a new session after the resume window expires', async () => {
+    const first = await getOrResumeMeeting('aaa-bbbb-ccc', { title: 'Call', meetUrl: 'https://meet.google.com/aaa-bbbb-ccc' }, 1000);
+    const later = await getOrResumeMeeting('aaa-bbbb-ccc', { title: 'Call', meetUrl: 'https://meet.google.com/aaa-bbbb-ccc' }, 1000 + 11 * 60_000);
+    expect(later.resumed).toBe(false);
+    expect(later.meeting.id).not.toBe(first.meeting.id);
+  });
+
+  it('upserts turns by stable id instead of inserting duplicates', async () => {
+    await upsertSegment({
+      id: 't1', meetingId: 'm1', speaker: 'Alief', text: 'halo bandung',
+      startedAt: 1000, endedAt: 1500, relativeStartMs: 0,
+    });
+    const result = await upsertSegment({
+      id: 't1', meetingId: 'm1', speaker: 'Alief', text: 'halo bandung sudah lama beta',
+      startedAt: 1000, endedAt: 2500, relativeStartMs: 0,
+    });
+    expect(result).toBe('updated');
+    const stored = await listSegments('m1');
+    expect(stored).toHaveLength(1);
+    expect(stored[0].text).toBe('halo bandung sudah lama beta');
   });
 
   it('returns empty lists for corrupt or missing data without throwing', async () => {

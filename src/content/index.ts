@@ -35,15 +35,23 @@ function pageTitle(): string {
   return title && title.toLowerCase() !== 'meet' ? title : '';
 }
 
-async function requestSession(meetCode: string): Promise<{ meetingId: string; meetingStart: number }> {
-  const fallback = { meetingId: `meet-${Date.now().toString(36)}`, meetingStart: Date.now() };
+async function requestSession(meetCode: string): Promise<{
+  meetingId: string;
+  meetingStart: number;
+  recentTurn: { id: string; speaker: string; text: string; endedAt: number } | null;
+}> {
+  const fallback = { meetingId: `meet-${Date.now().toString(36)}`, meetingStart: Date.now(), recentTurn: null };
   try {
     const response: unknown = await chrome.runtime.sendMessage({
       type: 'GET_OR_RESUME_MEETING_SESSION',
       payload: { meetCode, title: pageTitle(), meetUrl: location.href, now: Date.now() },
     } satisfies RuntimeMessage);
     if (isRuntimeMessage(response) && response.type === 'MEETING_SESSION') {
-      return { meetingId: response.payload.meetingId, meetingStart: response.payload.startedAt };
+      return {
+        meetingId: response.payload.meetingId,
+        meetingStart: response.payload.startedAt,
+        recentTurn: response.payload.recentTurn,
+      };
     }
   } catch {
     bootLogger.info('session request failed, using local meeting');
@@ -58,9 +66,13 @@ async function init(): Promise<void> {
   bootLogger.info('initialized');
   bootLogger.info('meet code:', meetCode || '(none)');
 
-  const { meetingId, meetingStart } = await requestSession(meetCode);
+  const { meetingId, meetingStart, recentTurn } = await requestSession(meetCode);
   const engine = new TranscriptEngine({ meetingId, meetingStart });
   const turns = new SpeakerTurnAggregator({ meetingId, meetingStart });
+  if (recentTurn) {
+    turns.seedLastFinalized(recentTurn);
+    bootLogger.info('resumed with recent turn, replay will extend it');
+  }
   let signal: MeetStateSignal = 'MEET_DETECTED';
   let meetingAnnounced = false;
 

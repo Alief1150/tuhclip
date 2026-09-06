@@ -64,6 +64,20 @@ export class SpeakerTurnAggregator {
     return this.finalized.map((turn) => ({ ...turn }));
   }
 
+  seedLastFinalized(summary: { id: string; speaker: string; text: string; endedAt: number }): void {
+    if (this.open || this.lastFinalized) return;
+    this.lastFinalized = {
+      id: summary.id,
+      meetingId: this.meetingId,
+      speaker: summary.speaker,
+      text: summary.text,
+      startedAt: summary.endedAt,
+      endedAt: summary.endedAt,
+      relativeStartMs: Math.max(0, summary.endedAt - this.meetingStart),
+      finalized: true,
+    };
+  }
+
   ingestChunk(chunk: TurnChunk): TurnIngestResult {
     const text = displayCleanup(chunk.text);
     if (!text) {

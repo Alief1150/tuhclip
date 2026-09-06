@@ -69,6 +69,16 @@ describe('SessionManager', () => {
     expect(manager.get('meeting-A')?.status).toBe('ended');
   });
 
+  it('ends disconnected sessions only after the resume window expires', () => {
+    const manager = new SessionManager();
+    manager.registerOrHeartbeat(heartbeatA());
+    manager.markDisconnected('meeting-A', 1000);
+    expect(manager.sweepStale(1000 + 60_000, 10 * 60_000)).toEqual([]);
+    expect(manager.get('meeting-A')?.status).toBe('disconnected');
+    expect(manager.sweepStale(1000 + 11 * 60_000, 10 * 60_000)).toEqual(['meeting-A']);
+    expect(manager.get('meeting-A')?.status).toBe('ended');
+  });
+
   it('prunes only old ended sessions', () => {
     const manager = new SessionManager();
     manager.registerOrHeartbeat(heartbeatA());

@@ -19,7 +19,12 @@ export type RuntimeMessage =
     }
   | {
       type: 'MEETING_SESSION';
-      payload: { meetingId: string; startedAt: number; resumed: boolean };
+      payload: {
+        meetingId: string;
+        startedAt: number;
+        resumed: boolean;
+        recentTurn: { id: string; speaker: string; text: string; endedAt: number } | null;
+      };
     }
   | {
       type: 'SESSION_ENDED';
@@ -128,6 +133,7 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
     return isTranscriptSegment(message.payload)
       && typeof (message.payload as unknown as Record<string, unknown>).finalized === 'boolean';
   }
+  if (message.type === 'MEETING_SESSION') return isMeetingSession(message.payload);
   if (message.type === 'MEETING_STARTED') return isMeetingStarted(message.payload);
   if (message.type === 'SESSION_ENDED') {
     return !!message.payload
@@ -167,6 +173,26 @@ const isContentScriptReady = (
   return typeof info.meetCode === 'string'
     && typeof info.url === 'string'
     && typeof info.startedAt === 'number';
+};
+
+const isRecentTurn = (value: unknown): boolean => {
+  if (value === null) return true;
+  if (!value || typeof value !== 'object') return false;
+  const turn = value as Record<string, unknown>;
+  return typeof turn.id === 'string'
+    && typeof turn.speaker === 'string'
+    && typeof turn.text === 'string'
+    && typeof turn.endedAt === 'number';
+};
+
+const isMeetingSession = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object') return false;
+  const session = value as Record<string, unknown>;
+  return typeof session.meetingId === 'string'
+    && typeof session.startedAt === 'number'
+    && typeof session.resumed === 'boolean'
+    && 'recentTurn' in session
+    && isRecentTurn(session.recentTurn);
 };
 
 const isMeetingStarted = (

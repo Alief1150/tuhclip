@@ -64,6 +64,17 @@ describe('SpeakerTurnAggregator', () => {
     expect(turns.finalizedTurns[0].text).toBe('halo bandung sudah lama beta');
   });
 
+  it('reconnect replay extends the seeded turn instead of duplicating', () => {
+    const turns = new SpeakerTurnAggregator({ meetingId: 'm1' });
+    turns.seedLastFinalized({ id: 'turn-old', speaker: 'Alief', text: 'jadi tugas dikumpulkan besok', endedAt: 1000 });
+    const result = turns.ingestChunk(chunk('Alief', 'jadi tugas dikumpulkan besok pagi', 5000, 5500));
+    expect(result.created).toBe(false);
+    expect(result.turn.id).toBe('turn-old');
+    expect(result.turn.text).toBe('jadi tugas dikumpulkan besok pagi');
+    turns.finalizeOpen(6000);
+    expect(turns.finalizedTurns).toHaveLength(1);
+  });
+
   it('TEST F: allows genuine repetition minutes later', () => {
     const turns = new SpeakerTurnAggregator({ meetingId: 'm1' });
     turns.ingestChunk(chunk('Alief', 'terima kasih', 0, 500));

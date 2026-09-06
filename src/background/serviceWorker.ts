@@ -1,6 +1,6 @@
 import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
 import { createLogger } from '../shared/logger';
-import { createMeeting, endMeeting, getOrResumeMeeting, meetingTitleFallback } from '../storage/meetings';
+import { SESSION_RESUME_WINDOW_MS, createMeeting, endMeeting, getOrResumeMeeting, meetingTitleFallback } from '../storage/meetings';
 import { upsertSegment } from '../storage/segments';
 import { createInjectionTracker, extractMeetCode, isMissingReceiverError } from './contentHealth';
 import { shouldRelayToExtension } from './messageRelay';
@@ -83,7 +83,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     }
     if (raw.type === 'SESSION_ENDED') {
       void endMeeting(raw.payload.meetingId, raw.payload.endedAt).catch((error) => logger.debug('Background meeting end failed', error));
-      sessions.markEnded(raw.payload.meetingId, raw.payload.endedAt);
+      sessions.markDisconnected(raw.payload.meetingId, raw.payload.endedAt);
     }
     if (raw.type === 'MEET_HEARTBEAT') {
       sessions.registerOrHeartbeat({
@@ -109,22 +109,26 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     getOrResumeMeeting(raw.payload.meetCode, {
       title: raw.payload.title,
       meetUrl: raw.payload.meetUrl,
-    }, raw.payload.now).then(({ meeting, resumed }) => {
+    }, raw.payload.now).then(({ meeting, resumed, recentTurn }) => {
       sendResponse({
         type: 'MEETING_SESSION',
-        payload: { meetingId: meeting.id, startedAt: meeting.startedAt, resumed },
+        payload: { meetingId: meeting.id, startedAt: meeting.startedAt, resumed, recentTurn },
       } satisfies RuntimeMessage);
     }).catch((error) => {
       logger.debug('Meeting session resume failed', error);
       sendResponse({
         type: 'MEETING_SESSION',
-        payload: { meetingId: `meet-${Date.now().toString(36)}`, startedAt: Date.now(), resumed: false },
+        payload: { meetingId: `meet-${Date.now().toString(36)}`, startedAt: Date.now(), resumed: false, recentTurn: null },
       } satisfies RuntimeMessage);
     });
     return true;
   }
 
   if (raw.type === 'GET_ACTIVE_SESSIONS') {
+    const ended = sessions.sweepStale(Date.now(), SESSION_RESUME_WINDOW_MS);
+    for (const meetingId of ended) {
+      void endMeeting(meetingId, Date.now()).catch((error) => logger.debug('Background meeting end failed', error));
+    }
     sendResponse({ type: 'ACTIVE_SESSIONS', payload: { sessions: sessions.getActive() } } satisfies RuntimeMessage);
     return false;
   }
