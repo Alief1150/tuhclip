@@ -109,6 +109,35 @@ describe('TranscriptEngine', () => {
     expect(engine.active).toBeNull();
   });
 
+  it('does not split turns when the speaker label casing flickers', () => {
+    const engine = new TranscriptEngine({ meetingId: 'm1', meetingStart: 0 });
+    engine.ingest(observation('You', 'halo', 0));
+    engine.ingest(observation('you', 'halo bandung', 500));
+    engine.ingest(observation(' YOU ', 'halo bandung sudah lama', 1000));
+    engine.finalizeActive(2000);
+    expect(engine.finalized).toHaveLength(1);
+    expect(engine.finalized[0].text).toBe('halo bandung sudah lama');
+  });
+
+  it('reconciles overlapping re-renders instead of committing', () => {
+    const engine = new TranscriptEngine({ meetingId: 'm1', meetingStart: 0 });
+    engine.ingest(observation('Alief', 'halo bandung sudah lama', 0));
+    engine.ingest(observation('Alief', 'bandung sudah lama', 500));
+    engine.finalizeActive(1000);
+    expect(engine.finalized).toHaveLength(1);
+    expect(engine.finalized[0].text).toBe('halo bandung sudah lama');
+  });
+
+  it('inherits the active speaker when the label temporarily disappears', () => {
+    const engine = new TranscriptEngine({ meetingId: 'm1', meetingStart: 0 });
+    engine.ingest(observation('Alief', 'halo', 0));
+    engine.ingest(observation(null, 'halo bandung', 500));
+    engine.finalizeActive(1000);
+    expect(engine.finalized).toHaveLength(1);
+    expect(engine.finalized[0].speaker).toBe('Alief');
+    expect(engine.finalized[0].text).toBe('halo bandung');
+  });
+
   it('finalizes on inactivity timeout', () => {
     const engine = new TranscriptEngine({
       meetingId: 'm1',

@@ -24,6 +24,21 @@ describe('SpeakerTurnAggregator', () => {
     expect(turns.finalizedTurns).toHaveLength(1);
   });
 
+  it('Case E: keeps a long progressive paragraph in exactly one turn', () => {
+    const words = ['saya', 'ingin', 'bertanya', 'mengenai', 'jaringan', 'yang', 'tadi', 'pagi', 'dibahas',
+      'bersama', 'tim', 'infrastruktur', 'dan', 'keamanan', 'serta', 'rencana', 'migrasi', 'berikutnya',
+      'untuk', 'kuartal', 'depan'];
+    const turns = new SpeakerTurnAggregator({ meetingId: 'm1' });
+    let text = '';
+    words.forEach((word, index) => {
+      text = text ? `${text} ${word}` : word;
+      turns.ingestChunk(chunk('Alief', text, index * 200, index * 200 + 100));
+    });
+    turns.finalizeOpen(words.length * 200);
+    expect(turns.finalizedTurns).toHaveLength(1);
+    expect(turns.finalizedTurns[0].text).toBe(text);
+  });
+
   it('TEST B: keeps same-speaker chunks across a short pause in one turn', () => {
     const turns = new SpeakerTurnAggregator({ meetingId: 'm1' });
     turns.ingestChunk(chunk('Alief', 'saya ingin bertanya', 0, 1000));

@@ -6,12 +6,12 @@ const sourceAttributes = ['data-caption-id', 'data-message-id', 'data-id'] as co
 export function parseCaptionBlock(block: Element, observedAt = Date.now()): CaptionObservation | null {
   const speakerElement = block.matches(SPEAKER_SELECTOR) ? block : block.querySelector(SPEAKER_SELECTOR);
   const textElement = block.matches(CAPTION_TEXT_SELECTOR) ? block : block.querySelector(CAPTION_TEXT_SELECTOR);
-  const speaker = speakerElement?.textContent?.trim() || 'Unknown speaker';
+  const speaker = speakerElement?.textContent?.trim() || null;
   let text = textElement?.textContent?.trim() ?? '';
 
   if (!text) {
     text = block.textContent?.trim() ?? '';
-    if (speaker !== 'Unknown speaker' && text.startsWith(speaker)) {
+    if (speaker && text.startsWith(speaker)) {
       text = text.slice(speaker.length).trim();
     }
   }

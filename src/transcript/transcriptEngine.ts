@@ -20,9 +20,28 @@ const defaultId = () => {
   return `seg-${Date.now().toString(36)}-${idCounter}`;
 };
 
-function extendsProgressively(previous: string, next: string): boolean {
-  if (next.length < previous.length) return false;
-  return normalizeForComparison(next).startsWith(normalizeForComparison(previous));
+export function normalizeSpeakerName(speaker: string): string {
+  return speaker.replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+}
+
+function startActive(
+  makeId: () => string,
+  speaker: string,
+  text: string,
+  normalized: string,
+  observedAt: number,
+  sourceId?: string,
+): ActiveSegment {
+  return {
+    id: makeId(),
+    speaker,
+    text,
+    normalizedText: normalized,
+    startedAt: observedAt,
+    updatedAt: observedAt,
+    ...(sourceId === undefined ? {} : { sourceId }),
+    finalized: false,
+  };
 }
 
 export class TranscriptEngine {
@@ -51,80 +70,51 @@ export class TranscriptEngine {
   }
 
   ingest(observation: CaptionObservation): void {
-    const speaker = observation.speaker?.trim() ? observation.speaker.trim() : UNKNOWN_SPEAKER;
+    const observedLabel = observation.speaker?.trim() ? observation.speaker.trim() : null;
     const text = displayCleanup(observation.text);
     if (!text) return;
     const normalized = normalizeForComparison(text);
 
     if (!this.current) {
-      this.current = {
-        id: this.makeId(),
-        speaker,
-        text,
-        normalizedText: normalized,
-        startedAt: observation.observedAt,
-        updatedAt: observation.observedAt,
-        ...(observation.sourceId === undefined ? {} : { sourceId: observation.sourceId }),
-        finalized: false,
-      };
+      const speaker = observedLabel ?? UNKNOWN_SPEAKER;
+      this.current = startActive(this.makeId, speaker, text, normalized, observation.observedAt, observation.sourceId);
       return;
     }
 
-    if (this.current.speaker !== speaker) {
+    const speaker = observedLabel ?? this.resolveInheritedSpeaker(normalized);
+    if (normalizeSpeakerName(this.current.speaker) !== normalizeSpeakerName(speaker)) {
       this.commit(this.current, observation.observedAt);
-      this.current = {
-        id: this.makeId(),
-        speaker,
-        text,
-        normalizedText: normalized,
-        startedAt: observation.observedAt,
-        updatedAt: observation.observedAt,
-        ...(observation.sourceId === undefined ? {} : { sourceId: observation.sourceId }),
-        finalized: false,
-      };
+      this.current = startActive(this.makeId, speaker, text, normalized, observation.observedAt, observation.sourceId);
       return;
     }
 
-    if (
-      observation.sourceId !== undefined
-      && this.current.sourceId !== undefined
-      && observation.sourceId !== this.current.sourceId
-    ) {
-      this.commit(this.current, observation.observedAt);
-      this.current = {
-        id: this.makeId(),
-        speaker,
-        text,
-        normalizedText: normalized,
-        startedAt: observation.observedAt,
-        updatedAt: observation.observedAt,
-        sourceId: observation.sourceId,
-        finalized: false,
-      };
+    if (observedLabel) this.current.speaker = observedLabel;
+    if (normalized === this.current.normalizedText) {
+      this.current.updatedAt = observation.observedAt;
+      if (observation.sourceId !== undefined) this.current.sourceId = observation.sourceId;
       return;
     }
 
-    if (normalized === this.current.normalizedText) return;
-
-    if (extendsProgressively(this.current.text, text) || extendsProgressively(text, this.current.text)) {
-      this.current.text = text.length >= this.current.text.length ? text : this.current.text;
-      this.current.normalizedText = normalizeForComparison(this.current.text);
+    if (normalized.includes(this.current.normalizedText) || this.current.normalizedText.includes(normalized)) {
+      if (normalized.length >= this.current.normalizedText.length) {
+        this.current.text = text;
+        this.current.normalizedText = normalized;
+      }
       this.current.updatedAt = observation.observedAt;
       if (observation.sourceId !== undefined) this.current.sourceId = observation.sourceId;
       return;
     }
 
     this.commit(this.current, observation.observedAt);
-    this.current = {
-      id: this.makeId(),
-      speaker,
-      text,
-      normalizedText: normalized,
-      startedAt: observation.observedAt,
-      updatedAt: observation.observedAt,
-      ...(observation.sourceId === undefined ? {} : { sourceId: observation.sourceId }),
-      finalized: false,
-    };
+    this.current = startActive(this.makeId, speaker, text, normalized, observation.observedAt, observation.sourceId);
+  }
+
+  private resolveInheritedSpeaker(normalized: string): string {
+    if (!this.current) return UNKNOWN_SPEAKER;
+    if (normalized.includes(this.current.normalizedText) || this.current.normalizedText.includes(normalized)) {
+      return this.current.speaker;
+    }
+    return UNKNOWN_SPEAKER;
   }
 
   captionGone(at: number): TranscriptSegment | null {

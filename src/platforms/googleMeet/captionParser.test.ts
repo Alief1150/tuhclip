@@ -18,12 +18,12 @@ describe('parseCaptionBlock', () => {
     });
   });
 
-  it('uses the safe fallback when speaker markup is absent', () => {
+  it('returns a null speaker when speaker markup is absent so the engine can inherit', () => {
     const block = new TestElement('div', { role: 'listitem' })
       .append(new TestElement('span', { 'data-caption-text': 'true' }, 'Still speaking'));
 
     expect(parseCaptionBlock(asElement(block), 50)).toEqual({
-      speaker: 'Unknown speaker',
+      speaker: null,
       text: 'Still speaking',
       observedAt: 50,
     });
@@ -38,7 +38,7 @@ describe('parseCaptionBlock', () => {
   it('parses a direct caption-text element', () => {
     const block = new TestElement('span', { 'data-caption-text': 'true', 'data-caption-id': 'direct-1' }, 'Direct words');
     expect(parseCaptionBlock(asElement(block), 75)).toEqual({
-      speaker: 'Unknown speaker',
+      speaker: null,
       text: 'Direct words',
       observedAt: 75,
       sourceId: 'direct-1',

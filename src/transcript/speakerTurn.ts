@@ -1,4 +1,5 @@
 import { displayCleanup, normalizeForComparison } from './normalization';
+import { normalizeSpeakerName } from './transcriptEngine';
 import type { TranscriptSegment } from './types';
 
 export const SPEAKER_TURN_CONTINUATION_MS = 8000;
@@ -85,18 +86,16 @@ export class SpeakerTurnAggregator {
     }
     const normalized = normalizeForComparison(text);
 
-    if (this.open && this.open.speaker === chunk.speaker) {
+    if (this.open && normalizeSpeakerName(this.open.speaker) === normalizeSpeakerName(chunk.speaker)) {
       const openNormalized = normalizeForComparison(this.open.text);
       if (normalized === openNormalized) {
         this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);
         return { turn: { ...this.open }, created: false, reopened: false };
       }
-      if (normalized.startsWith(openNormalized)) {
-        this.open.text = text;
-        this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);
-        return { turn: { ...this.open }, created: false, reopened: false };
-      }
-      if (openNormalized.startsWith(normalized)) {
+      if (normalized.includes(openNormalized) || openNormalized.includes(normalized)) {
+        if (normalized.length >= openNormalized.length) {
+          this.open.text = text;
+        }
         this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);
         return { turn: { ...this.open }, created: false, reopened: false };
       }
@@ -110,21 +109,23 @@ export class SpeakerTurnAggregator {
       this.commitOpen(chunk.endedAt);
     }
 
-    if (!this.open && this.lastFinalized && this.lastFinalized.speaker === chunk.speaker) {
+    if (!this.open && this.lastFinalized && normalizeSpeakerName(this.lastFinalized.speaker) === normalizeSpeakerName(chunk.speaker)) {
       const finalizedNormalized = normalizeForComparison(this.lastFinalized.text);
       const gap = chunk.startedAt - this.lastFinalized.endedAt;
       if (normalized === finalizedNormalized && gap <= this.extensionMs) {
         return { turn: { ...this.lastFinalized }, created: false, reopened: false };
       }
-      if (normalized.startsWith(finalizedNormalized) && gap <= this.extensionMs) {
+      if ((normalized.includes(finalizedNormalized) || finalizedNormalized.includes(normalized)) && gap <= this.extensionMs) {
         this.open = { ...this.lastFinalized, finalized: false };
-        this.open.text = text;
+        if (normalized.length >= finalizedNormalized.length) {
+          this.open.text = text;
+        }
         this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);
         this.finalized = this.finalized.filter((turn) => turn.id !== this.open?.id);
         this.lastFinalized = null;
         return { turn: { ...this.open }, created: false, reopened: true };
       }
-      if (gap <= this.continuationMs && !finalizedNormalized.startsWith(normalized)) {
+      if (gap <= this.continuationMs && !finalizedNormalized.includes(normalized) && !normalized.includes(finalizedNormalized)) {
         this.open = { ...this.lastFinalized, finalized: false };
         this.open.text = `${this.open.text} ${text}`;
         this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);
