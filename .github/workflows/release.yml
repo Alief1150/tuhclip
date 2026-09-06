@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact tagged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Production build and extension verification
+        run: npm run build
+
+      - name: Version and tag consistency check
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          DIST_VERSION="$(node -p "require('./dist/manifest.json').version")"
+          echo "tag=$TAG_VERSION package=$PKG_VERSION dist=$DIST_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ] || [ "$TAG_VERSION" != "$DIST_VERSION" ]; then
+            echo "Version mismatch: tag v$TAG_VERSION does not match package.json ($PKG_VERSION) and dist/manifest.json ($DIST_VERSION)."
+            exit 1
+          fi
+
+      - name: Package Chrome extension
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCHIVE="tuhclip-v$VERSION-chrome.zip"
+          rm -f "$ARCHIVE" "$ARCHIVE.sha256"
+          (cd dist && zip -r "../$ARCHIVE" .)
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          echo "Archive contents:"
+          unzip -l "$ARCHIVE"
+          test -f "$ARCHIVE"
+          unzip -p "$ARCHIVE" manifest.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const m=JSON.parse(s);if(m.manifest_version!==3)process.exit(1);console.log('manifest at ZIP root, version '+m.version)})"
+
+      - name: Write release notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          {
+            echo "## What's Changed"
+            echo ""
+            awk "/^## \[$VERSION\]/{flag=1;next}/^## \[/{flag=0}flag" CHANGELOG.md
+            echo ""
+            echo "## Installation"
+            echo ""
+            echo "1. Download \`tuhclip-v$VERSION-chrome.zip\` below"
+            echo "2. Extract the archive"
+            echo "3. Open \`chrome://extensions\`"
+            echo "4. Enable Developer mode"
+            echo "5. Click \`Load unpacked\`"
+            echo "6. Select the extracted tuhclip folder"
+            echo "7. Open Google Meet, turn captions (CC) on manually, and use tuhclip"
+            echo ""
+            echo "Captions must be turned on manually in the Meet UI. Automatic caption"
+            echo "activation and language selection are not implemented yet."
+            echo ""
+            echo "## Known Limitations"
+            echo ""
+            echo "- Real-browser validation of two simultaneous Google Meet sessions,"
+            echo "  background capture while browsing, reconnect behavior, and export"
+            echo "  integrity still requires manual Chrome testing."
+            echo "- Google Meet only. Speaker names fall back to \`Unknown speaker\`"
+            echo "  when Meet does not expose a name."
+            echo "- Meet DOM changes can require selector updates."
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCHIVE="tuhclip-v$VERSION-chrome.zip"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "tuhclip v$VERSION" \
+            --notes-file RELEASE_NOTES.md \
+            "$ARCHIVE" "$ARCHIVE.sha256"

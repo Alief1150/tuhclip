@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.1] - 2026-09-06
+
+### Added
+- GitHub Actions CI validation on push and pull request
+- Automated tagged GitHub Releases with an installable Chrome extension archive
+- SHA-256 checksum for the release archive
+- MIT License
+- Open-source release documentation in release/README.md
+
+### Changed
+- Documented release and installation workflow in README.md
+
 ## [0.1.0] - 2026-09-06
 
 ### Added

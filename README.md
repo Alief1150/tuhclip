@@ -23,7 +23,25 @@ session when a Meet tab reloads within a few minutes.
 - You must turn Google Meet captions on manually. `tuhclip` never
   clicks Meet controls for you.
 
-## Install and build
+## Installation
+
+The easiest install uses a published build:
+
+1. Download `tuhclip-vX.Y.Z-chrome.zip` from
+   [GitHub Releases](https://github.com/Alief1150/tuhclip/releases).
+2. Extract the archive.
+3. Open `chrome://extensions`, enable Developer mode.
+4. Choose "Load unpacked" and select the extracted folder.
+5. Open a Google Meet tab, turn captions on, then click the
+   `tuhclip` toolbar button to open the side panel.
+
+## Releases
+
+Installable builds live on the Releases page. Each release attaches a
+`tuhclip-vX.Y.Z-chrome.zip` archive plus a `.sha256` checksum. See
+`release/README.md` for the maintainer release flow.
+
+## Development / build from source
 
 Requirements: Node.js 20 or later, npm.
 
@@ -34,13 +52,9 @@ npm run typecheck
 npm run build
 ```
 
-## Load unpacked in Chrome
-
-1. Run `npm run build`.
-2. Open `chrome://extensions`, enable Developer mode.
-3. Choose "Load unpacked" and select the `dist/` directory.
-4. Open a Google Meet tab, turn captions on, then click the
-   `tuhclip` toolbar button to open the side panel.
+Then load the generated `dist/` directory as an unpacked extension
+(same Chrome steps as above). `dist/` is never committed; release
+archives are built by CI from source.
 
 ## Captions must be turned on manually
 
@@ -85,7 +99,14 @@ side panel            (live view, IndexedDB history, exports)
 
 ## Roadmap
 
+These are plans, not current features:
+
 - AI summary and LLM integration (opt-in, local-first).
 - Zoom and Microsoft Teams adapters behind the same engine.
 - Login, cloud sync, subscription, and remote backend (all non-goals
   for V1, architected so the transcript engine does not need rewrites).
+
+## License
+
+tuhclip is open-source software licensed under the MIT License. See
+[LICENSE](LICENSE).
