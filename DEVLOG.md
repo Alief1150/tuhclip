@@ -187,6 +187,17 @@ Phase 2: Google Meet Caption Capture, complete. Manual verification remains pend
 - Full gate: 110/110 tests, typecheck exit 0, production build plus verify-extension PASS.
 - Released 0.1.0 (package.json and manifest version synchronized, CHANGELOG.md created).
 
+## v0.3.2 stability patch
+
+- Fixed cumulative duplication: overlap-aware updates (contains-check keeps the longer text) in the chunk engine and turn aggregator; case-insensitive speaker comparison; speaker inheritance on temporary label loss; parser returns null speaker instead of early fallback.
+- Added Captions Off detection: 5s grace in content, CAPTIONS_OFF message, per-session flag, side-panel warning with manual enable steps; resume keeps the same session and transcript.
+- Background reliability: audited (no tab-visibility gating; persistence precedes active-tab relay); removed panel-side meeting close on foreign captions-inactive signals.
+- Follow button made solid, elevated, and pinned above the viewport edge.
+- Titles fall back to Meet code instead of generic labels.
+- Regression tests: engine speaker/overlap/inherit cases, Case E 20-update paragraph, reconnect replay seed, resume window, upsert, per-meeting isolation, export duplication, captions-off manager/status/validator coverage.
+- Gate: 120/120 tests, typecheck exit 0, build plus verify-extension PASS, standalone content.js confirmed.
+- Released 0.3.2, tag v0.3.2, GitHub Release with ZIP and checksum published by Actions.
+
 ## Remaining work
 
-- Manual follow-ups requiring a live browser: two-Meet isolation walkthrough, background capture while browsing, reconnect and export cross-check per docs/oc-multitasking/06, plus content-script/service-worker/side-panel console review.
+- MANUAL QA REQUIRED in a live browser: progressive duplicate test, caption-off toggle, follow-latest control, background tab switch, two-Meet isolation, speaker alternation, history titles, per-meeting exports.
