@@ -5,7 +5,7 @@ import { toMarkdown } from '../export/markdown';
 import { toText } from '../export/text';
 import { isRuntimeMessage, type RuntimeMessage, type SessionSignals } from '../shared/messages';
 import { createLogger } from '../shared/logger';
-import { createMeeting, endMeeting, getMeeting, listMeetings, meetingTitleFallback, type MeetingHistoryEntry, type MeetingSession } from '../storage/meetings';
+import { createMeeting, getMeeting, listMeetings, meetCodeFromUrl, meetingTitleFallback, type MeetingHistoryEntry, type MeetingSession } from '../storage/meetings';
 import type { RuntimeSession } from '../background/sessionManager';
 import { listSegments, upsertSegment } from '../storage/segments';
 import type { TranscriptSegment } from '../transcript/types';
@@ -247,19 +247,11 @@ export function App() {
         retry.current();
         if (raw.type === 'CAPTIONS_INACTIVE') {
           setActiveCaption(null);
-          const current = meetingRef.current;
-          if (current && current.endedAt === undefined) {
-            const endedAt = Date.now();
-            void endMeeting(current.id, endedAt).then(() => {
-              setMeeting({ ...current, endedAt, durationMs: Math.max(0, endedAt - current.startedAt) });
-              void refreshHistory();
-            });
-          }
         }
         return;
       }
       if (raw.type === 'MEETING_STARTED') {
-        const title = raw.payload.title.trim() || meetingTitleFallback(raw.payload.startedAt);
+        const title = raw.payload.title.trim() || meetingTitleFallback(raw.payload.startedAt, meetCodeFromUrl(raw.payload.meetUrl));
         const session: MeetingSession = {
           id: raw.payload.meetingId,
           title,
@@ -532,9 +524,9 @@ export function App() {
                     </ol>
                   </ScrollArea>
                   {!follow.following && follow.unseen > 0 && (
-                    <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
-                      <Button size="sm" onClick={jumpToLatest} aria-label={`Jump to latest, ${follow.unseen} new transcript items`}>
-                        ↓ Latest · {follow.unseen} new
+                    <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+                      <Button size="sm" className="pointer-events-auto shadow-lg" onClick={jumpToLatest} aria-label={`Jump to latest, ${follow.unseen} new transcript items`}>
+                        ↓ {follow.unseen} new
                       </Button>
                     </div>
                   )}

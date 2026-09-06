@@ -92,6 +92,27 @@ describe('storage', () => {
     expect(stored[0].text).toBe('halo bandung sudah lama beta');
   });
 
+  it('keeps transcripts isolated per meeting', async () => {
+    await upsertSegment({
+      id: 'a1', meetingId: 'meeting-A', speaker: 'Alief', text: 'hello A',
+      startedAt: 1000, endedAt: 1500, relativeStartMs: 0,
+    });
+    await upsertSegment({
+      id: 'b1', meetingId: 'meeting-B', speaker: 'Mahdi', text: 'hello B',
+      startedAt: 1000, endedAt: 1500, relativeStartMs: 0,
+    });
+    expect((await listSegments('meeting-A')).map((segment) => segment.text)).toEqual(['hello A']);
+    expect((await listSegments('meeting-B')).map((segment) => segment.text)).toEqual(['hello B']);
+  });
+
+  it('resolves meeting titles with meet-code fallback', async () => {
+    const { meetingTitleFallback, meetCodeFromUrl } = await import('./meetings');
+    expect(meetingTitleFallback(1000, 'abc-defg-hij')).toBe('Meet abc-defg-hij');
+    expect(meetingTitleFallback(1000)).toContain('Google Meet');
+    expect(meetCodeFromUrl('https://meet.google.com/abc-defg-hij')).toBe('abc-defg-hij');
+    expect(meetCodeFromUrl('https://example.com')).toBe('');
+  });
+
   it('returns empty lists for corrupt or missing data without throwing', async () => {
     expect(await listSegments('missing')).toEqual([]);
     expect(await listMeetings()).toEqual([]);

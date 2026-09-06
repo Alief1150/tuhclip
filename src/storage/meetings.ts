@@ -39,7 +39,7 @@ export async function getOrResumeMeeting(
   info: { title: string; meetUrl: string },
   now: number = Date.now(),
 ): Promise<{ meeting: MeetingSession; resumed: boolean; recentTurn: RecentTurnSummary | null }> {
-  const fallbackTitle = info.title.trim() || meetingTitleFallback(now);
+  const fallbackTitle = info.title.trim() || meetingTitleFallback(now, meetCode);
   if (!meetCode) {
     const fresh: MeetingSession = {
       id: `meet-${now.toString(36)}`,
@@ -75,11 +75,17 @@ export interface MeetingHistoryEntry extends MeetingSession {
   segmentCount: number;
 }
 
-export function meetingTitleFallback(startedAt: number): string {
+export function meetingTitleFallback(startedAt: number, meetCode?: string): string {
+  if (meetCode?.trim()) return `Meet ${meetCode.trim()}`;
   const date = new Date(startedAt);
   const pad = (value: number) => String(value).padStart(2, '0');
   const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   return `Google Meet - ${day} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export function meetCodeFromUrl(meetUrl: string): string {
+  const match = meetUrl.match(/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})/i);
+  return match ? match[1] : '';
 }
 
 export async function createMeeting(meeting: MeetingSession): Promise<MeetingSession> {

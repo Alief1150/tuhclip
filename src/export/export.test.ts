@@ -60,6 +60,20 @@ describe('export formats', () => {
     expect(parsed.segments[0].relativeStartMs).toBe(81_000);
   });
 
+  it('Case F: renders one reconciled turn exactly once in every format', () => {
+    const turn = [{
+      id: 't1', meetingId: 'm1', speaker: 'You',
+      text: '1 2 3 halo halo Halo Bandung kotak kenang-kenangan Sudah lama beta tidak berjumpa',
+      startedAt: 1000, endedAt: 5000, relativeStartMs: 1000, finalized: true,
+    }];
+    const text = toText(meeting, turn);
+    expect(text.match(/kenang-kenangan/g)).toHaveLength(1);
+    const markdown = toMarkdown(meeting, turn);
+    expect(markdown.match(/kenang-kenangan/g)).toHaveLength(1);
+    const parsed = JSON.parse(toJSON(meeting, turn)) as { segments: TranscriptSegment[] };
+    expect(parsed.segments).toHaveLength(1);
+  });
+
   it('handles empty transcripts without crashing', () => {
     expect(toText(meeting, [])).toContain('Weekly Sync');
     expect(toMarkdown(meeting, [])).toContain('# Weekly Sync');

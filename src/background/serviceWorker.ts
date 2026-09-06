@@ -1,6 +1,6 @@
 import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
 import { createLogger } from '../shared/logger';
-import { SESSION_RESUME_WINDOW_MS, createMeeting, endMeeting, getOrResumeMeeting, meetingTitleFallback } from '../storage/meetings';
+import { SESSION_RESUME_WINDOW_MS, createMeeting, endMeeting, getOrResumeMeeting, meetCodeFromUrl, meetingTitleFallback } from '../storage/meetings';
 import { upsertSegment } from '../storage/segments';
 import { createInjectionTracker, extractMeetCode, isMissingReceiverError } from './contentHealth';
 import { shouldRelayToExtension } from './messageRelay';
@@ -75,7 +75,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       lastBackgroundTurn = { meetingId: raw.payload.meetingId, at: Date.now() };
       void createMeeting({
         id: raw.payload.meetingId,
-        title: raw.payload.title.trim() || meetingTitleFallback(raw.payload.startedAt),
+        title: raw.payload.title.trim() || meetingTitleFallback(raw.payload.startedAt, meetCodeFromUrl(raw.payload.meetUrl)),
         meetUrl: raw.payload.meetUrl,
         startedAt: raw.payload.startedAt,
         createdAt: Date.now(),
