@@ -36,6 +36,13 @@ export class TestElement {
     return this.descendants().filter((element) => matches(element, selector));
   }
 
+  closest(selector: string): TestElement | null {
+    for (let current: TestElement | null = this; current; current = current.parentElement) {
+      if (matches(current, selector)) return current;
+    }
+    return null;
+  }
+
   contains(element: TestElement): boolean {
     return element === this || this.descendants().includes(element);
   }

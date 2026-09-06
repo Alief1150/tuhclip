@@ -3,16 +3,22 @@
 Local Google Meet caption transcripts in the Chrome side panel.
 
 `tuhclip` reads the live captions you already turned on in Google Meet,
-reconciles the noisy progressive text into clean segments, stores
+reconciles the noisy progressive text into clean speaker turns, stores
 everything locally in your browser, and shows the result in a Chrome
-side panel with history and TXT, Markdown, and JSON export.
+side panel with live follow mode, meeting history, and TXT, Markdown,
+and JSON export.
+
+It keeps capturing while you browse other tabs, supports several Meet
+meetings at once with per-meeting sessions, and reconnects to the same
+session when a Meet tab reloads within a few minutes.
 
 ## Privacy model
 
 - All transcript data stays local in the browser (IndexedDB).
 - No microphone recording, no tab or system audio capture.
 - No speech-to-text services, no cloud upload, no analytics.
-- Permissions are minimal: `sidePanel` only, scoped to
+- Permissions are minimal: `sidePanel` plus `scripting` (used only to
+  re-attach the caption reader when a Meet tab misses it), scoped to
   `https://meet.google.com/*`.
 - You must turn Google Meet captions on manually. `tuhclip` never
   clicks Meet controls for you.

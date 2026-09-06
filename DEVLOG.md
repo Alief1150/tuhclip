@@ -177,8 +177,16 @@ Phase 2: Google Meet Caption Capture, complete. Manual verification remains pend
 - Checks: typecheck exit 0; production build exit 0 plus `verify-extension` PASS (standalone `assets/content.js`, manifest references resolve).
 - Tests added: `src/transcript/speakerTurn.test.ts` covering spec tests A–G (7/7 passing in isolation). Full suite not re-run in this session per user request.
 
+## Multitasking pack (0.1.0)
+
+- Phase 01 Smart Follow Latest: `FollowTracker` keyed by meetingId, 80px near-bottom threshold, floating Latest button with unseen count; 6 tests.
+- Phase 02 background independence: turns and meetings persist in the background service worker, so capture survives tab switches, History view, and panel reopen; panel adopts the live meeting on open and shows Transcribing in background.
+- Phase 03 multi-session: `SessionManager` map with heartbeat registration, active-session selector in Live view, per-session transcript display, auto-select on Meet switch with manual override.
+- Phase 04 reconnect: 10-minute resume window, reconnectCount, disconnected-to-ended sweep on session poll, replay dedup via seeded recent turn, unfinished captions finalized on pagehide.
+- Phase 05 session UX: Open Meet tab activation with graceful missing-tab handling, selector rows with title and meet code.
+- Full gate: 110/110 tests, typecheck exit 0, production build plus verify-extension PASS.
+- Released 0.1.0 (package.json and manifest version synchronized, CHANGELOG.md created).
+
 ## Remaining work
 
-- Manual follow-ups requiring a live browser: real Google Meet caption verification (progressive in-place updates, pause continuation, speaker switch, exports), side-panel open-late/close/reopen walkthrough, and content-script/service-worker/side-panel console review.
-- Phase 4: IndexedDB persistence, meeting history, transcript UI, and exports.
-- Phase 5 and Phase 6: integration testing, hardening, real unpacked-extension browser verification, and final cross-check.
+- Manual follow-ups requiring a live browser: two-Meet isolation walkthrough, background capture while browsing, reconnect and export cross-check per docs/oc-multitasking/06, plus content-script/service-worker/side-panel console review.
