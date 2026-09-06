@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.2] - 2026-09-07
+
+### Fixed
+- Prevented cumulative Google Meet caption updates from duplicating transcript text
+- Added Captions Off detection with a grace period and side-panel warning
+- Removed side-panel meeting close tied to another tab losing captions
+- Made the transcript latest indicator always visible above the viewport edge
+- Preserved speaker labels across flicker, casing changes, and temporary label loss
+- Made speaker comparison case-insensitive in the transcript engine and turn aggregator
+
+### Changed
+- Improved meeting and history titles with Meet-code fallback
+
 ## [0.3.1] - 2026-09-06
 
 ### Added

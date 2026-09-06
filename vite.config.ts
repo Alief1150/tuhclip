@@ -9,7 +9,7 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 const manifest = {
   manifest_version: 3,
   name: 'tuhclip',
-  version: '0.3.1',
+  version: '0.3.2',
   minimum_chrome_version: '116',
   description: 'Local Google Meet caption transcripts in the Chrome side panel.',
   permissions: ['sidePanel', 'scripting'],
