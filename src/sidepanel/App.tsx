@@ -6,7 +6,7 @@ import { toText } from '../export/text';
 import { isRuntimeMessage, type RuntimeMessage, type SessionSignals } from '../shared/messages';
 import { createLogger } from '../shared/logger';
 import { createMeeting, endMeeting, listMeetings, meetingTitleFallback, type MeetingHistoryEntry, type MeetingSession } from '../storage/meetings';
-import { addSegment, listSegments } from '../storage/segments';
+import { listSegments, upsertSegment } from '../storage/segments';
 import type { TranscriptSegment } from '../transcript/types';
 import { deriveViewState } from './viewState';
 import { createSequentialPoll } from './poll';
@@ -200,13 +200,18 @@ export function App() {
         });
         return;
       }
-      if (raw.type === 'TRANSCRIPT_SEGMENT') {
+      if (raw.type === 'TRANSCRIPT_TURN' || raw.type === 'TRANSCRIPT_SEGMENT') {
         const segment = raw.payload;
-        void addSegment(segment).then((stored) => {
-          if (!stored) return;
+        void upsertSegment(segment).then(() => {
           setActiveCaption(null);
           if (meetingRef.current?.id === segment.meetingId) {
-            setSegments((previous) => [...previous, segment]);
+            setSegments((previous) => {
+              const index = previous.findIndex((entry) => entry.id === segment.id);
+              if (index === -1) return [...previous, segment];
+              const next = [...previous];
+              next[index] = segment;
+              return next;
+            });
           }
           void refreshHistory();
         }).catch((cause) => logger.error('Segment persist failed', cause));
@@ -266,8 +271,8 @@ export function App() {
 
   return (
     <ToastProvider position="bottom-center">
-      <main className="flex min-h-dvh flex-col gap-3 bg-muted p-3">
-        <header className="sticky top-0 z-10 flex items-center justify-between rounded-lg border bg-background px-3 py-2 shadow-xs">
+      <main className="flex h-dvh flex-col gap-2 overflow-hidden bg-muted p-3">
+        <header className="flex shrink-0 items-center justify-between rounded-lg border bg-background px-3 py-2 shadow-xs">
           <div className="flex items-center gap-2">
             <img src="/paperclip.png" alt="" className="size-6 object-contain" />
             <span className="font-heading text-base font-bold tracking-tight">tuhclip</span>
@@ -275,14 +280,14 @@ export function App() {
           <Badge variant="outline" size="sm">local only</Badge>
         </header>
 
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="w-full">
+        <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-2">
+          <TabsList className="w-full shrink-0">
             <TabsTab value="live" className="flex-1">Live</TabsTab>
             <TabsTab value="history" className="flex-1">History</TabsTab>
           </TabsList>
 
-          <TabsPanel value="live" className="min-h-0">
-            <section aria-live="polite" className="flex min-h-0 flex-col gap-2 rounded-lg border bg-background p-3 shadow-xs">
+          <TabsPanel value="live" className="flex min-h-0 flex-1 flex-col">
+            <section aria-live="polite" className="flex min-h-0 flex-1 flex-col gap-2 rounded-lg border bg-background p-3 shadow-xs">
               <div className="flex items-center justify-between gap-2">
                 {statusBadge}
                 {meeting && segments.length > 0 && (
@@ -344,7 +349,7 @@ export function App() {
                   </EmptyHeader>
                 </Empty>
               ) : (
-                <ScrollArea className="max-h-[55dvh]">
+                <ScrollArea className="min-h-0 flex-1">
                   <ol className="flex flex-col">
                     {segments.map((segment) => (
                       <li key={segment.id} className="border-t border-border py-2 first:border-t-0 first:pt-0">
@@ -368,8 +373,8 @@ export function App() {
             </section>
           </TabsPanel>
 
-          <TabsPanel value="history" className="min-h-0">
-            <section aria-live="polite" className="flex min-h-0 flex-col gap-2 rounded-lg border bg-background p-3 shadow-xs">
+          <TabsPanel value="history" className="flex min-h-0 flex-1 flex-col">
+            <section aria-live="polite" className="flex min-h-0 flex-1 flex-col gap-2 rounded-lg border bg-background p-3 shadow-xs">
               {viewing ? (
                 <>
                   <div className="flex items-center justify-between gap-2">
@@ -389,7 +394,7 @@ export function App() {
                       </EmptyHeader>
                     </Empty>
                   ) : (
-                    <ScrollArea className="max-h-[50dvh]">
+                    <ScrollArea className="min-h-0 flex-1">
                       <ol className="flex flex-col">
                         {viewing.segments.map((segment) => (
                           <li key={segment.id} className="border-t border-border py-2 first:border-t-0 first:pt-0">
@@ -420,7 +425,7 @@ export function App() {
                   </EmptyHeader>
                 </Empty>
               ) : (
-                <ScrollArea className="max-h-[60dvh]">
+                <ScrollArea className="min-h-0 flex-1">
                   <ol className="flex flex-col gap-1.5">
                     {history.map((entry) => (
                       <li key={entry.id}>
@@ -443,7 +448,7 @@ export function App() {
           </TabsPanel>
         </Tabs>
 
-        <footer className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+        <footer className="flex shrink-0 items-center justify-between px-1 text-xs text-muted-foreground">
           <span>tuhclip</span>
           <span>Google Meet</span>
         </footer>

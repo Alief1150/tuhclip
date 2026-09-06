@@ -3,9 +3,9 @@ export function normalizeForComparison(text: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .toLocaleLowerCase()
-    .replace(/[“”"']/g, '')
-    .replace(/\s+([,.!?;:])/g, '$1')
-    .replace(/\s+/g, ' ');
+    .replace(/[\p{P}\p{S}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function displayCleanup(text: string): string {

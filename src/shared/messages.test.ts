@@ -51,6 +51,23 @@ describe('isRuntimeMessage', () => {
     })).toBe(false);
   });
 
+  it('accepts speaker-turn messages carrying a finalized flag', () => {
+    expect(isRuntimeMessage({
+      type: 'TRANSCRIPT_TURN',
+      payload: {
+        id: 'turn-1', meetingId: 'm1', speaker: 'Alief', text: 'Halo',
+        startedAt: 1000, endedAt: 2000, relativeStartMs: 0, finalized: false,
+      },
+    })).toBe(true);
+    expect(isRuntimeMessage({
+      type: 'TRANSCRIPT_TURN',
+      payload: {
+        id: 'turn-1', meetingId: 'm1', speaker: 'Alief', text: 'Halo',
+        startedAt: 1000, endedAt: 2000, relativeStartMs: 0,
+      },
+    })).toBe(false);
+  });
+
   it('accepts finalized transcript segments but rejects malformed ones', () => {
     expect(isRuntimeMessage({
       type: 'TRANSCRIPT_SEGMENT',

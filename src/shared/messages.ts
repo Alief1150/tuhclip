@@ -26,6 +26,7 @@ export type RuntimeMessage =
   | { type: MeetStateSignal }
   | { type: 'CAPTION_OBSERVATION'; payload: CaptionObservation }
   | { type: 'TRANSCRIPT_SEGMENT'; payload: TranscriptSegment }
+  | { type: 'TRANSCRIPT_TURN'; payload: TranscriptTurn }
   | {
       type: 'MEETING_STARTED';
       payload: { meetingId: string; title: string; meetUrl: string; startedAt: number };
@@ -97,11 +98,18 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
   }
   if (message.type === 'CAPTION_OBSERVATION') return isCaptionObservation(message.payload);
   if (message.type === 'TRANSCRIPT_SEGMENT') return isTranscriptSegment(message.payload);
+  if (message.type === 'TRANSCRIPT_TURN') {
+    return isTranscriptSegment(message.payload)
+      && typeof (message.payload as unknown as Record<string, unknown>).finalized === 'boolean';
+  }
   if (message.type === 'MEETING_STARTED') return isMeetingStarted(message.payload);
   return message.type === 'SESSION_STATUS' && isSignals(message.payload);
 }
 import type { CaptionObservation, MeetStateSignal } from '../platforms/googleMeet/types';
+import type { SpeakerTurn } from '../transcript/speakerTurn';
 import type { TranscriptSegment } from '../transcript/types';
+
+type TranscriptTurn = SpeakerTurn;
 
 const isContentScriptReady = (
   value: unknown,

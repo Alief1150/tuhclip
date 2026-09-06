@@ -37,7 +37,7 @@ async function healContentScript(tabId: number): Promise<void> {
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!isRuntimeMessage(raw)) return false;
 
-  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY')) {
+  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY')) {
     logger.debug('Message arrived from Meet tab', raw.type);
     chrome.tabs.query({ active: true, currentWindow: true }).then(([activeTab]) => {
       if (shouldRelayToExtension(raw, sender.tab ?? {}, activeTab)) {

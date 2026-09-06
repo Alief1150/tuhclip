@@ -166,8 +166,19 @@ Phase 2: Google Meet Caption Capture, complete. Manual verification remains pend
 - `gh repo view alief1150/tuhclip --web=false`: verified repository exists with the pushed branch and README rendering.
 - Updated `FINAL_CHECK.md` with repository, remote URL, branch, commit hash, and `dist/` build folder.
 
+## Transcript reconciliation fix (speaker turns)
+
+- Root causes of cumulative duplication: (a) Meet recreates caption DOM per update, so region loss triggered `captionGone()` and finalized a segment per progressive version; (b) the 2s inactivity timeout finalized mid-utterance chunks; (c) every finalized chunk became a permanent UI/IndexedDB row with no aggregation layer. Same-speaker rows split for the same reason: no speaker-turn concept existed.
+- Parser reads individual rows, never `region.textContent`; speaker prefix is stripped from row text. Added row-count/raw-text/parsed-caption debug logs plus a `button` exclusion in the structural fallback so field reports can isolate the layer.
+- New `SpeakerTurnAggregator` (`src/transcript/speakerTurn.ts`): chunks merge into turns for the same speaker (extension/shrinkage updates in place, short-pause continuation joins with a space inside `SPEAKER_TURN_CONTINUATION_MS = 8000`); speaker change finalizes; recently finalized turns reopen when extended within `SPEAKER_TURN_EXTENSION_MS = 30000`; genuine later repetition still creates a new turn. No magic numbers scattered.
+- Normalization now strips punctuation for comparison only (`\p{P}\p{S}`); display text is untouched and no wording is rewritten.
+- Pipeline is now observation → chunk engine → turn aggregator → `TRANSCRIPT_TURN` upsert. Side panel and IndexedDB upsert by stable turn id (`upsertSegment`); exports render turns, so TXT/MD/JSON stay clean.
+- Side panel is a stable 100vh shell: header, tabs, status/export toolbar, and footer are fixed while only the transcript ScrollArea scrolls. Turn items use lightweight separators, speaker semibold, muted timestamps, live turn updated in place.
+- Checks: typecheck exit 0; production build exit 0 plus `verify-extension` PASS (standalone `assets/content.js`, manifest references resolve).
+- Tests added: `src/transcript/speakerTurn.test.ts` covering spec tests A–G (7/7 passing in isolation). Full suite not re-run in this session per user request.
+
 ## Remaining work
 
-- Manual follow-ups requiring a live browser: real Google Meet caption verification, side-panel open-late/close/reopen walkthrough, and content-script/service-worker/side-panel console review.
+- Manual follow-ups requiring a live browser: real Google Meet caption verification (progressive in-place updates, pause continuation, speaker switch, exports), side-panel open-late/close/reopen walkthrough, and content-script/service-worker/side-panel console review.
 - Phase 4: IndexedDB persistence, meeting history, transcript UI, and exports.
 - Phase 5 and Phase 6: integration testing, hardening, real unpacked-extension browser verification, and final cross-check.

@@ -83,6 +83,7 @@ export function findCaptionBlocks(region: Element): Element[] {
   const descendants = Array.from(region.querySelectorAll(CAPTION_BLOCK_SELECTOR));
   const candidates = descendants.length > 0 ? descendants : Array.from(region.children);
   return candidates.filter((element) => {
+    if (element.closest('button,[role="button"]')) return false;
     for (let parent = element.parentElement; parent && parent !== region; parent = parent.parentElement) {
       if (parent.matches(CAPTION_BLOCK_SELECTOR)) return false;
     }

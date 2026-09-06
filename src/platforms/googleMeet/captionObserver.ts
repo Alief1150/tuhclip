@@ -110,14 +110,18 @@ export function createCaptionObserver(options: CaptionObserverOptions): CaptionO
 
   const read = () => {
     if (!region) return;
+    const blocks = readBlocks(region);
+    logger.debug('Caption row count', blocks.length);
     let foundCaption = false;
-    for (const block of readBlocks(region)) {
+    for (const block of blocks) {
+      logger.debug('Raw row text', block.textContent?.trim() ?? '');
       const observation = parseBlock(block);
       if (!observation) continue;
       foundCaption = true;
       hadCaption = true;
       logger.debug('Speaker parsed', observation.speaker);
       logger.debug('Caption text parsed', observation.text);
+      logger.debug('Parsed caption', observation.text);
       options.onObservation(observation);
     }
     emitState(foundCaption ? 'CAPTIONS_ACTIVE' : hadCaption ? 'CAPTIONS_INACTIVE' : 'CAPTIONS_WAITING');

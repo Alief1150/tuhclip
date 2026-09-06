@@ -8,6 +8,14 @@ export async function addSegment(segment: TranscriptSegment): Promise<boolean> {
   return true;
 }
 
+export type UpsertResult = 'inserted' | 'updated';
+
+export async function upsertSegment(segment: TranscriptSegment): Promise<UpsertResult> {
+  const existing = await storeGet<TranscriptSegment>('segments', segment.id).catch(() => null);
+  await storePut('segments', segment);
+  return existing ? 'updated' : 'inserted';
+}
+
 export async function listSegments(meetingId: string): Promise<TranscriptSegment[]> {
   const segments = await storeGetAllByIndex<TranscriptSegment>('segments', 'by-meeting', meetingId).catch(
     () => [],

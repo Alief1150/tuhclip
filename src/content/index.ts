@@ -4,6 +4,8 @@ import { createCaptionObserver } from '../platforms/googleMeet/captionObserver';
 import type { MeetStateSignal } from '../platforms/googleMeet/types';
 import { createLogger } from '../shared/logger';
 import { TranscriptEngine } from '../transcript/transcriptEngine';
+import { SpeakerTurnAggregator, type SpeakerTurn } from '../transcript/speakerTurn';
+import type { TranscriptSegment } from '../transcript/types';
 
 declare global {
   interface Window {
@@ -58,8 +60,20 @@ async function init(): Promise<void> {
 
   const { meetingId, meetingStart } = await requestSession(meetCode);
   const engine = new TranscriptEngine({ meetingId, meetingStart });
+  const turns = new SpeakerTurnAggregator({ meetingId, meetingStart });
   let signal: MeetStateSignal = 'MEET_DETECTED';
   let meetingAnnounced = false;
+
+  const emitTurn = (turn: SpeakerTurn) => {
+    transcriptLogger.debug(turn.finalized ? 'Turn finalized' : 'Turn updated', turn.speaker, turn.text);
+    safeSend({ type: 'TRANSCRIPT_TURN', payload: turn });
+  };
+
+  const absorbChunk = (chunk: TranscriptSegment | null) => {
+    if (!chunk) return;
+    const result = turns.ingestChunk(chunk);
+    emitTurn(result.turn);
+  };
 
   const announceMeeting = () => {
     if (meetingAnnounced) return;
@@ -72,8 +86,7 @@ async function init(): Promise<void> {
 
   const flushFinalized = () => {
     for (const segment of engine.checkInactivity(Date.now())) {
-      transcriptLogger.debug('Segment finalized', segment.speaker, segment.text);
-      safeSend({ type: 'TRANSCRIPT_SEGMENT', payload: segment });
+      absorbChunk(segment);
     }
   };
 
@@ -90,11 +103,7 @@ async function init(): Promise<void> {
       const previous = signal;
       signal = next;
       if ((next === 'CAPTIONS_INACTIVE' || next === 'CAPTIONS_WAITING') && previous === 'CAPTIONS_ACTIVE') {
-        const segment = engine.captionGone(Date.now());
-        if (segment) {
-          transcriptLogger.debug('Segment finalized', segment.speaker, segment.text);
-          safeSend({ type: 'TRANSCRIPT_SEGMENT', payload: segment });
-        }
+        absorbChunk(engine.captionGone(Date.now()));
       }
       safeSend({ type: next });
     },
@@ -111,11 +120,9 @@ async function init(): Promise<void> {
 
   window.addEventListener('pagehide', () => {
     window.clearInterval(inactivityTimer);
-    const segment = engine.meetingEnded(Date.now());
-    if (segment) {
-      transcriptLogger.debug('Segment finalized', segment.speaker, segment.text);
-      safeSend({ type: 'TRANSCRIPT_SEGMENT', payload: segment });
-    }
+    absorbChunk(engine.meetingEnded(Date.now()));
+    const closing = turns.finalizeOpen(Date.now());
+    if (closing) emitTurn(closing);
     observer.stop();
   }, { once: true });
 
