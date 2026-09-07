@@ -155,7 +155,7 @@ export function createCaptionObserver(options: CaptionObserverOptions): CaptionO
       logger.debug('Speaker parsed', observation.speaker);
       logger.debug('Caption text parsed', observation.text);
       logger.debug('Parsed caption', observation.text);
-      options.onObservation(observation);
+      options.onObservation({ ...observation, sourceId: observation.sourceId ?? key });
     }
     forgetStaleRows(seen);
     emitState(foundCaption ? 'CAPTIONS_ACTIVE' : hadCaption ? 'CAPTIONS_INACTIVE' : 'CAPTIONS_WAITING');

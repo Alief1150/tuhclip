@@ -1,9 +1,9 @@
-import { displayCleanup, mergeCumulative, normalizeForComparison } from './normalization';
+import { displayCleanup, reconcileSnapshots } from './normalization';
 import { normalizeSpeakerName } from './transcriptEngine';
+import { SPEAKER_TURN_CONTINUATION_MS, SPEAKER_TURN_EXTENSION_MS } from '../shared/constants';
 import type { TranscriptSegment } from './types';
 
-export const SPEAKER_TURN_CONTINUATION_MS = 8000;
-export const SPEAKER_TURN_EXTENSION_MS = 30_000;
+export { SPEAKER_TURN_CONTINUATION_MS, SPEAKER_TURN_EXTENSION_MS };
 
 export interface SpeakerTurn extends TranscriptSegment {
   finalized: boolean;
@@ -84,12 +84,10 @@ export class SpeakerTurnAggregator {
     if (!text) {
       throw new Error('SpeakerTurnAggregator received an empty chunk');
     }
-    const normalized = normalizeForComparison(text);
-
     if (this.open && normalizeSpeakerName(this.open.speaker) === normalizeSpeakerName(chunk.speaker)) {
-      const merged = mergeCumulative(this.open.text, text);
-      if (merged !== null) {
-        this.open.text = merged;
+      const result = reconcileSnapshots(this.open.text, text);
+      if (result.kind !== 'NEW_CONTENT' && result.merged !== null) {
+        this.open.text = result.merged;
         this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);
         return { turn: { ...this.open }, created: false, reopened: false };
       }
@@ -104,24 +102,23 @@ export class SpeakerTurnAggregator {
     }
 
     if (!this.open && this.lastFinalized && normalizeSpeakerName(this.lastFinalized.speaker) === normalizeSpeakerName(chunk.speaker)) {
-      const finalizedNormalized = normalizeForComparison(this.lastFinalized.text);
       const gap = chunk.startedAt - this.lastFinalized.endedAt;
-      if (normalized === finalizedNormalized && gap <= this.extensionMs) {
+      const result = reconcileSnapshots(this.lastFinalized.text, text);
+      if (result.kind === 'EXACT' && gap <= this.extensionMs) {
         return { turn: { ...this.lastFinalized }, created: false, reopened: false };
       }
-      const merged = mergeCumulative(this.lastFinalized.text, text);
-      if (merged !== null && merged !== this.lastFinalized.text && gap <= this.extensionMs) {
+      if (result.kind !== 'NEW_CONTENT' && result.merged !== null && gap <= this.extensionMs) {
+        if (result.merged === this.lastFinalized.text) {
+          return { turn: { ...this.lastFinalized }, created: false, reopened: false };
+        }
         this.open = { ...this.lastFinalized, finalized: false };
-        this.open.text = merged;
+        this.open.text = result.merged;
         this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);
         this.finalized = this.finalized.filter((turn) => turn.id !== this.open?.id);
         this.lastFinalized = null;
         return { turn: { ...this.open }, created: false, reopened: true };
       }
-      if (merged !== null && gap <= this.extensionMs) {
-        return { turn: { ...this.lastFinalized }, created: false, reopened: false };
-      }
-      if (gap <= this.continuationMs && merged === null) {
+      if (result.kind === 'NEW_CONTENT' && gap <= this.continuationMs) {
         this.open = { ...this.lastFinalized, finalized: false };
         this.open.text = `${this.open.text} ${text}`;
         this.open.endedAt = Math.max(this.open.endedAt, chunk.endedAt);

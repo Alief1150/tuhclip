@@ -55,7 +55,7 @@ describe('createCaptionObserver', () => {
       attributes: true,
       attributeFilter: ['hidden', 'aria-hidden', 'inert', 'style', 'class'],
     } }]);
-    expect(observations).toEqual([{ speaker: 'Ada', text: 'Hello', observedAt: 10 }]);
+    expect(observations).toEqual([{ speaker: 'Ada', text: 'Hello', observedAt: 10, sourceId: 'element#1' }]);
 
     observers[1].fire([{ type: 'characterData', target: region.children[0] } as unknown as MutationRecord]);
     observers[1].fire([{ type: 'characterData', target: region.children[0] } as unknown as MutationRecord]);
@@ -142,17 +142,17 @@ describe('createCaptionObserver', () => {
     controller.start();
     scheduled.shift()?.();
     expect(observations).toEqual([
-      { speaker: 'Ada', text: 'First line' },
-      { speaker: 'Ada', text: 'Second line' },
+      { speaker: 'Ada', text: 'First line', sourceId: 'id:data-caption-id=row-1' },
+      { speaker: 'Ada', text: 'Second line', sourceId: 'id:data-caption-id=row-2' },
     ]);
 
     row2.textContent = 'Second line extended';
     observers.at(-1)?.fire([{ type: 'characterData', target: row2 } as unknown as MutationRecord]);
     scheduled.shift()?.();
     expect(observations).toEqual([
-      { speaker: 'Ada', text: 'First line' },
-      { speaker: 'Ada', text: 'Second line' },
-      { speaker: 'Ada', text: 'Second line extended' },
+      { speaker: 'Ada', text: 'First line', sourceId: 'id:data-caption-id=row-1' },
+      { speaker: 'Ada', text: 'Second line', sourceId: 'id:data-caption-id=row-2' },
+      { speaker: 'Ada', text: 'Second line extended', sourceId: 'id:data-caption-id=row-2' },
     ]);
 
     observers.at(-1)?.fire([{ type: 'childList', target: region } as unknown as MutationRecord]);

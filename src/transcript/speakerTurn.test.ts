@@ -59,6 +59,62 @@ describe('SpeakerTurnAggregator', () => {
     expect(turns.finalizedTurns).toHaveLength(1);
   });
 
+  it('real QA pattern: shared-base revisions keep the base exactly once', () => {
+    const base = 'halo hai teman teman semua apa kabar di sini ada rafli';
+    const tails = [
+      'nunggu di',
+      'ya pak saya tunggu untuk memastikan',
+      'ya bahasa',
+      'tisu galon',
+      'sebenarnya pakai',
+      'sekarang ini adalah tes terbaru',
+    ];
+    const turns = new SpeakerTurnAggregator({ meetingId: 'm1' });
+    tails.forEach((tail, index) => {
+      turns.ingestChunk(chunk('Alief', `${base} ${tail}`, index * 1000, index * 1000 + 500));
+    });
+    turns.finalizeOpen(tails.length * 1000);
+    expect(turns.finalizedTurns).toHaveLength(1);
+    const text = turns.finalizedTurns[0].text;
+    const baseOccurrences = text.split(base).length - 1;
+    expect(baseOccurrences).toBe(1);
+    expect(text.endsWith('sekarang ini adalah tes terbaru')).toBe(true);
+  });
+
+  it('long mixed stress: 30 updates keep one turn with every continuation', () => {
+    const turns = new SpeakerTurnAggregator({ meetingId: 'm1' });
+    let text = 'mulai';
+    const uniqueWords = new Set<string>(['mulai']);
+    for (let i = 1; i <= 30; i += 1) {
+      const step = i % 6;
+      if (step === 0) {
+        text += ` lanjut${i}`;
+        uniqueWords.add(`lanjut${i}`);
+      } else if (step === 1) {
+        const words = text.split(' ');
+        text = [...words.slice(-3), `geser${i}`].join(' ');
+        uniqueWords.add(`geser${i}`);
+      } else if (step === 2) {
+        uniqueWords.add(text.split(' ').pop() ?? '');
+      } else if (step === 3) {
+        const words = text.split(' ');
+        text = [...words.slice(0, -1), `revisi${i}`].join(' ');
+        uniqueWords.add(`revisi${i}`);
+      } else if (step === 4) {
+        text = `${text}.`;
+      }
+      turns.ingestChunk(chunk('Alief', text, i * 300, i * 300 + 100));
+    }
+    turns.finalizeOpen(30 * 300 + 500);
+    expect(turns.finalizedTurns).toHaveLength(1);
+    const final = turns.finalizedTurns[0].text;
+    for (const word of uniqueWords) {
+      if (word) expect(final).toContain(word);
+    }
+    const firstWords = final.split(' ').slice(0, 4).join(' ');
+    expect(final.split(firstWords).length - 1).toBeLessThanOrEqual(2);
+  });
+
   it('TEST B: keeps same-speaker chunks across a short pause in one turn', () => {
     const turns = new SpeakerTurnAggregator({ meetingId: 'm1' });
     turns.ingestChunk(chunk('Alief', 'saya ingin bertanya', 0, 1000));

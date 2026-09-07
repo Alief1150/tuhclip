@@ -1,6 +1,7 @@
 import type { CaptionObservation } from '../platforms/googleMeet/types';
+import { SPEAKER_TURN_CONTINUATION_MS } from '../shared/constants';
 import { RecentDedupeCache } from './deduplication';
-import { displayCleanup, mergeCumulative, normalizeForComparison } from './normalization';
+import { displayCleanup, normalizeForComparison, reconcileSnapshots } from './normalization';
 import type { ActiveSegment, TranscriptSegment } from './types';
 
 export interface TranscriptEngineOptions {
@@ -89,10 +90,19 @@ export class TranscriptEngine {
     }
 
     if (observedLabel) this.current.speaker = observedLabel;
-    const merged = mergeCumulative(this.current.text, text);
-    if (merged !== null) {
-      this.current.text = merged;
-      this.current.normalizedText = normalizeForComparison(merged);
+    const result = reconcileSnapshots(this.current.text, text);
+    if (result.kind !== 'NEW_CONTENT' && result.merged !== null) {
+      const sameSource = this.current.sourceId !== undefined
+        && observation.sourceId !== undefined
+        && this.current.sourceId === observation.sourceId;
+      const gap = observation.observedAt - this.current.updatedAt;
+      if (result.kind === 'PREFIX_REVISION' && !sameSource && gap > SPEAKER_TURN_CONTINUATION_MS) {
+        this.commit(this.current, observation.observedAt);
+        this.current = startActive(this.makeId, speaker, text, normalized, observation.observedAt, observation.sourceId);
+        return;
+      }
+      this.current.text = result.merged;
+      this.current.normalizedText = normalizeForComparison(result.merged);
       this.current.updatedAt = observation.observedAt;
       if (observation.sourceId !== undefined) this.current.sourceId = observation.sourceId;
       return;
