@@ -1,5 +1,6 @@
 import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
 import { extractMeetCode } from '../background/contentHealth';
+import { resolveMeetingMetadata, resolveSpeakerName } from '../platforms/googleMeet/meetingMetadata';
 import { createCaptionObserver } from '../platforms/googleMeet/captionObserver';
 import type { MeetStateSignal } from '../platforms/googleMeet/types';
 import { CAPTION_OFF_GRACE_MS } from '../shared/constants';
@@ -68,6 +69,18 @@ async function init(): Promise<void> {
   bootLogger.info('meet code:', meetCode || '(none)');
 
   const { meetingId, meetingStart, recentTurn } = await requestSession(meetCode);
+  const metadata = resolveMeetingMetadata(document, meetCode);
+  const localName = metadata.localName;
+  if (localName) bootLogger.info('local participant name resolved');
+  let sentTitleQuality = -1;
+  const maybeSendMetadata = () => {
+    const current = resolveMeetingMetadata(document, meetCode);
+    if (current.title && current.quality > sentTitleQuality) {
+      sentTitleQuality = current.quality;
+      safeSend({ type: 'METADATA_UPDATE', payload: { meetingId, title: current.title, quality: current.quality } });
+    }
+  };
+  maybeSendMetadata();
   const engine = new TranscriptEngine({ meetingId, meetingStart });
   const turns = new SpeakerTurnAggregator({ meetingId, meetingStart });
   if (recentTurn) {
@@ -98,6 +111,7 @@ async function init(): Promise<void> {
   };
 
   const flushFinalized = () => {
+    maybeSendMetadata();
     for (const segment of engine.checkInactivity(Date.now())) {
       absorbChunk(segment);
     }
@@ -145,10 +159,12 @@ async function init(): Promise<void> {
     },
     onObservation: (observation) => {
       announceMeeting();
+      const resolved = resolveSpeakerName(observation.speaker, localName);
+      const normalized = resolved === null ? observation : { ...observation, speaker: resolved };
       const hadActive = engine.active !== null;
-      engine.ingest(observation);
-      transcriptLogger.debug(hadActive ? 'Active segment updated' : 'Active segment created', observation.speaker, observation.text);
-      safeSend({ type: 'CAPTION_OBSERVATION', payload: observation });
+      engine.ingest(normalized);
+      transcriptLogger.debug(hadActive ? 'Active segment updated' : 'Active segment created', normalized.speaker, normalized.text);
+      safeSend({ type: 'CAPTION_OBSERVATION', payload: normalized });
     },
   });
 

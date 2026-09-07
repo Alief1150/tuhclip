@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { closeDatabase, deleteDatabase } from './db';
-import { createMeeting, endMeeting, getOrResumeMeeting, listMeetings } from './meetings';
+import { createMeeting, endMeeting, getMeeting, getOrResumeMeeting, listMeetings, updateMeetingMetadata } from './meetings';
 import { addSegment, listSegments, upsertSegment } from './segments';
 import { readSetting, writeSetting } from './settings';
 
@@ -111,6 +111,33 @@ describe('storage', () => {
     expect(meetingTitleFallback(1000)).toContain('Google Meet');
     expect(meetCodeFromUrl('https://meet.google.com/abc-defg-hij')).toBe('abc-defg-hij');
     expect(meetCodeFromUrl('https://example.com')).toBe('');
+  });
+
+  it('upgrades meeting titles only toward better quality', async () => {
+    await createMeeting({
+      id: 'm1', title: 'Meet abc-defg-hij', titleQuality: 1,
+      meetUrl: 'https://meet.google.com/abc-defg-hij', startedAt: 1000, createdAt: 1000,
+    });
+    expect(await updateMeetingMetadata('m1', { title: 'Meet abc-defg-hij', quality: 1 })).toBeNull();
+    expect(await updateMeetingMetadata('m1', { title: '   ', quality: 3 })).toBeNull();
+    const upgraded = await updateMeetingMetadata('m1', { title: 'Kelas Jaringan', quality: 3 });
+    expect(upgraded?.title).toBe('Kelas Jaringan');
+    expect(await updateMeetingMetadata('m1', { title: 'Meet abc-defg-hij', quality: 1 })).toBeNull();
+    expect((await getMeeting('m1'))?.title).toBe('Kelas Jaringan');
+  });
+
+  it('round-trips finalized turns for crash resilience without leaving them open', async () => {
+    await upsertSegment({
+      id: 't1', meetingId: 'm1', speaker: 'Alief', text: 'Halo',
+      startedAt: 1000, endedAt: 1500, relativeStartMs: 0, finalized: false,
+    } as never);
+    await upsertSegment({
+      id: 't1', meetingId: 'm1', speaker: 'Alief', text: 'Halo semuanya',
+      startedAt: 1000, endedAt: 2500, relativeStartMs: 0, finalized: true,
+    } as never);
+    const stored = await listSegments('m1');
+    expect(stored).toHaveLength(1);
+    expect((stored[0] as unknown as { finalized: boolean }).finalized).toBe(true);
   });
 
   it('returns empty lists for corrupt or missing data without throwing', async () => {

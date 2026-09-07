@@ -274,6 +274,16 @@ export function App() {
         }).catch((cause) => logger.error('Meeting create failed', cause));
         return;
       }
+      if (raw.type === 'METADATA_UPDATE') {
+        if (meetingRef.current?.id === raw.payload.meetingId) {
+          setMeeting((previous) => previous ? { ...previous, title: raw.payload.title } : previous);
+        }
+        setViewing((previous) => previous && previous.meeting.id === raw.payload.meetingId
+          ? { meeting: { ...previous.meeting, title: raw.payload.title }, segments: previous.segments }
+          : previous);
+        void refreshHistory();
+        return;
+      }
       if (raw.type === 'CAPTION_OBSERVATION') {
         setActiveCaption({
           speaker: raw.payload.speaker?.trim() ? raw.payload.speaker : 'Unknown speaker',

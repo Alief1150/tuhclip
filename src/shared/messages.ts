@@ -36,6 +36,10 @@ export type RuntimeMessage =
       payload: { meetingId: string; since: number };
     }
   | {
+      type: 'METADATA_UPDATE';
+      payload: { meetingId: string; title: string; quality: number };
+    }
+  | {
       type: 'MEET_HEARTBEAT';
       payload: { meetingId: string; meetCode: string; timestamp: number };
     }
@@ -159,6 +163,13 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
       && typeof message.payload === 'object'
       && typeof (message.payload as Record<string, unknown>).meetingId === 'string'
       && typeof (message.payload as Record<string, unknown>).since === 'number';
+  }
+  if (message.type === 'METADATA_UPDATE') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && typeof (message.payload as Record<string, unknown>).meetingId === 'string'
+      && typeof (message.payload as Record<string, unknown>).title === 'string'
+      && typeof (message.payload as Record<string, unknown>).quality === 'number';
   }
   if (message.type === 'SESSION_ENDED') {
     return !!message.payload

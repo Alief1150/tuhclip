@@ -12,12 +12,26 @@ export interface RecentTurnSummary {
 export interface MeetingSession {
   id: string;
   title: string;
+  titleQuality?: number;
   meetUrl: string;
   meetCode?: string;
   startedAt: number;
   endedAt?: number;
   durationMs?: number;
   createdAt: number;
+}
+
+export async function updateMeetingMetadata(
+  id: string,
+  update: { title: string; quality: number },
+): Promise<MeetingSession | null> {
+  const meeting = await storeGet<MeetingSession>('meetings', id).catch(() => null);
+  if (!meeting) return null;
+  const currentQuality = meeting.titleQuality ?? 0;
+  if (!update.title.trim() || update.quality <= currentQuality) return null;
+  const next = { ...meeting, title: update.title.trim(), titleQuality: update.quality };
+  await storePut('meetings', next);
+  return next;
 }
 
 export const SESSION_RESUME_WINDOW_MS = 10 * 60 * 1000;

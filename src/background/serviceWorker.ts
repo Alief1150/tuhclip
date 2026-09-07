@@ -1,8 +1,8 @@
 import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
 import { createLogger } from '../shared/logger';
-import { SESSION_RESUME_WINDOW_MS, createMeeting, endMeeting, getOrResumeMeeting, meetCodeFromUrl, meetingTitleFallback } from '../storage/meetings';
+import { SESSION_RESUME_WINDOW_MS, createMeeting, endMeeting, getOrResumeMeeting, meetCodeFromUrl, meetingTitleFallback, updateMeetingMetadata } from '../storage/meetings';
 import { upsertSegment } from '../storage/segments';
-import { createInjectionTracker, extractMeetCode, isMissingReceiverError } from './contentHealth';
+import { createInjectionTracker, extractMeetCode, isMissingReceiverError, provisionalMeetingId } from './contentHealth';
 import { shouldRelayToExtension } from './messageRelay';
 import { SessionManager } from './sessionManager';
 import { resolveSessionStatus } from './sessionStatus';
@@ -43,7 +43,7 @@ async function healContentScript(tabId: number): Promise<void> {
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!isRuntimeMessage(raw)) return false;
 
-  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY' || raw.type === 'SESSION_ENDED' || raw.type === 'MEET_HEARTBEAT' || raw.type === 'CAPTIONS_OFF')) {
+  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY' || raw.type === 'SESSION_ENDED' || raw.type === 'MEET_HEARTBEAT' || raw.type === 'CAPTIONS_OFF' || raw.type === 'METADATA_UPDATE')) {
     logger.debug('Message arrived from Meet tab', raw.type);
     if (raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN') {
       lastBackgroundTurn = { meetingId: raw.payload.meetingId, at: Date.now() };
@@ -61,8 +61,13 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       });
     }
     if (raw.type === 'CONTENT_SCRIPT_READY') {
+      const provisionalId = provisionalMeetingId(raw.payload.meetCode);
+      if (!provisionalId) {
+        logger.debug('Handshake without meet code, waiting for session identity');
+        return;
+      }
       sessions.registerOrHeartbeat({
-        meetingId: `meet-${raw.payload.meetCode || 'unknown'}`,
+        meetingId: provisionalId,
         meetCode: raw.payload.meetCode,
         meetUrl: raw.payload.url,
         title: '',
@@ -87,6 +92,12 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     }
     if (raw.type === 'CAPTIONS_OFF') {
       sessions.setCaptionsOff(raw.payload.meetingId, true);
+    }
+    if (raw.type === 'METADATA_UPDATE') {
+      void updateMeetingMetadata(raw.payload.meetingId, {
+        title: raw.payload.title,
+        quality: raw.payload.quality,
+      }).catch((error) => logger.debug('Background title upgrade failed', error));
     }
     if (raw.type === 'CAPTIONS_ACTIVE' && sender.tab?.id !== undefined) {
       const session = sessions.getByTab(sender.tab.id);
