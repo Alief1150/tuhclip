@@ -9,6 +9,10 @@ export function extractMeetCode(pathname: string): string {
   return match ? match[1] : '';
 }
 
+export function provisionalMeetingId(meetCode: string): string | null {
+  return meetCode ? `meet-${meetCode}` : null;
+}
+
 export function createInjectionTracker() {
   const inFlight = new Set<number>();
   const injected = new Set<number>();

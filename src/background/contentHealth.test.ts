@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { createInjectionTracker, extractMeetCode, isMissingReceiverError } from './contentHealth';
+import { createInjectionTracker, extractMeetCode, isMissingReceiverError, provisionalMeetingId } from './contentHealth';
 
 describe('contentHealth', () => {
   it('detects the missing-receiver connection error', () => {
     expect(isMissingReceiverError(new Error('Could not establish connection. Receiving end does not exist.'))).toBe(true);
     expect(isMissingReceiverError(new Error('No tab with id: 99'))).toBe(false);
     expect(isMissingReceiverError(null)).toBe(false);
+  });
+
+  it('refuses a provisional session identity without a meet code', () => {
+    expect(provisionalMeetingId('')).toBeNull();
+    expect(provisionalMeetingId('abc-defg-hij')).toBe('meet-abc-defg-hij');
   });
 
   it('extracts the Meet code from the page path', () => {
