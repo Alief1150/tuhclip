@@ -117,7 +117,7 @@ describe('createCaptionObserver', () => {
     root.append(region);
     const observers: FakeObserver[] = [];
     const scheduled: Array<() => void> = [];
-    const observations: Array<{ speaker: string | null; text: string }> = [];
+    const observations: Array<{ speaker: string | null; text: string; sourceId?: string }> = [];
     const controller = createCaptionObserver({
       root: asRoot(root),
       resolveRegion: () => asElement(region),
@@ -136,7 +136,7 @@ describe('createCaptionObserver', () => {
       addNavigationListener: () => undefined,
       removeNavigationListener: () => undefined,
       onState: () => undefined,
-      onObservation: (observation) => observations.push({ speaker: observation.speaker, text: observation.text }),
+      onObservation: (observation) => observations.push({ speaker: observation.speaker, text: observation.text, sourceId: observation.sourceId }),
     });
 
     controller.start();
