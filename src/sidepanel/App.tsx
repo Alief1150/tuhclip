@@ -287,18 +287,14 @@ export function App() {
         void upsertSegment(segment).then(() => {
           setActiveCaption(null);
           if (meetingRef.current?.id === segment.meetingId) {
-            let isNew = false;
             setSegments((previous) => {
               const index = previous.findIndex((entry) => entry.id === segment.id);
-              if (index === -1) {
-                isNew = true;
-                return [...previous, segment];
-              }
+              if (index === -1) return [...previous, segment];
               const next = [...previous];
               next[index] = segment;
               return next;
             });
-            const { shouldScroll, state } = followTracker.current.onNewItems(segment.meetingId, isNew ? 1 : 0);
+            const { shouldScroll, state } = followTracker.current.onTurnChanged(segment.meetingId, segment.id);
             setFollow(state);
             if (shouldScroll) scrollLiveToBottom(false);
           }

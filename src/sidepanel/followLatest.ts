@@ -9,38 +9,54 @@ export interface FollowState {
   unseen: number;
 }
 
+interface MeetingFollow {
+  following: boolean;
+  unseenIds: Set<string>;
+}
+
 export class FollowTracker {
-  private states = new Map<string, FollowState>();
+  private states = new Map<string, MeetingFollow>();
+
+  private current(meetingId: string): MeetingFollow {
+    let state = this.states.get(meetingId);
+    if (!state) {
+      state = { following: true, unseenIds: new Set() };
+      this.states.set(meetingId, state);
+    }
+    return state;
+  }
 
   forMeeting(meetingId: string): FollowState {
-    const existing = this.states.get(meetingId);
-    if (existing) return { ...existing };
-    return { following: true, unseen: 0 };
+    const state = this.states.get(meetingId);
+    if (!state) return { following: true, unseen: 0 };
+    return { following: state.following, unseen: state.unseenIds.size };
   }
 
   onScroll(meetingId: string, atBottom: boolean): FollowState {
-    const next: FollowState = atBottom
-      ? { following: true, unseen: 0 }
-      : { following: false, unseen: this.states.get(meetingId)?.unseen ?? 0 };
-    this.states.set(meetingId, next);
-    return { ...next };
+    const state = this.current(meetingId);
+    if (atBottom) {
+      state.following = true;
+      state.unseenIds.clear();
+    } else {
+      state.following = false;
+    }
+    return { following: state.following, unseen: state.unseenIds.size };
   }
 
-  onNewItems(meetingId: string, count: number): { shouldScroll: boolean; state: FollowState } {
-    const current = this.states.get(meetingId) ?? { following: true, unseen: 0 };
-    if (current.following) {
-      const next = { following: true, unseen: 0 };
-      this.states.set(meetingId, next);
-      return { shouldScroll: true, state: { ...next } };
+  onTurnChanged(meetingId: string, turnId: string): { shouldScroll: boolean; state: FollowState } {
+    const state = this.current(meetingId);
+    if (state.following) {
+      state.unseenIds.clear();
+      return { shouldScroll: true, state: { following: true, unseen: 0 } };
     }
-    const next = { following: false, unseen: current.unseen + count };
-    this.states.set(meetingId, next);
-    return { shouldScroll: false, state: { ...next } };
+    state.unseenIds.add(turnId);
+    return { shouldScroll: false, state: { following: false, unseen: state.unseenIds.size } };
   }
 
   jumpToLatest(meetingId: string): FollowState {
-    const next: FollowState = { following: true, unseen: 0 };
-    this.states.set(meetingId, next);
-    return { ...next };
+    const state = this.current(meetingId);
+    state.following = true;
+    state.unseenIds.clear();
+    return { following: true, unseen: 0 };
   }
 }
