@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.4] - 2026-09-07
+
+### Fixed
+- Reconciled shared-prefix caption revisions without duplicating the base text
+- Attached stable row source identity to every caption observation
+- Removed blind snapshot concatenation from speaker-turn assembly
+- Showed the latest control when an existing turn updates while scrolled up
+- Upgraded meeting titles from Meet metadata with quality ranking
+- Removed duplicate runtime meeting sessions without a meet code
+
+## [0.3.3] - 2026-09-07
+
+### Fixed
+- Reconciled shared-prefix caption revisions without duplicating the base text
+- Attached stable row source identity to every caption observation
+- Removed blind snapshot concatenation from speaker-turn assembly
+- Showed the latest control when an existing turn updates while scrolled up
+- Upgraded meeting titles from Meet metadata with quality ranking
+- Removed duplicate runtime meeting sessions without a meet code
+
 ## [0.3.3] - 2026-09-07
 
 ### Fixed
