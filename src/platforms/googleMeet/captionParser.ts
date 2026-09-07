@@ -3,6 +3,22 @@ import type { CaptionObservation } from './types';
 
 const sourceAttributes = ['data-caption-id', 'data-message-id', 'data-id'] as const;
 
+export function blockSourceId(block: Element): string | null {
+  for (const attribute of sourceAttributes) {
+    const value = block.getAttribute(attribute);
+    if (value) return value;
+  }
+  return null;
+}
+
+export function rowKeyFor(block: Element): string | null {
+  for (const attribute of sourceAttributes) {
+    const value = block.getAttribute(attribute);
+    if (value) return `${attribute}=${value}`;
+  }
+  return null;
+}
+
 export function parseCaptionBlock(block: Element, observedAt = Date.now()): CaptionObservation | null {
   const speakerElement = block.matches(SPEAKER_SELECTOR) ? block : block.querySelector(SPEAKER_SELECTOR);
   const textElement = block.matches(CAPTION_TEXT_SELECTOR) ? block : block.querySelector(CAPTION_TEXT_SELECTOR);
@@ -17,8 +33,6 @@ export function parseCaptionBlock(block: Element, observedAt = Date.now()): Capt
   }
   if (!text) return null;
 
-  const sourceId = sourceAttributes
-    .map((attribute) => block.getAttribute(attribute))
-    .find((value): value is string => Boolean(value));
+  const sourceId = blockSourceId(block);
   return { speaker, text, observedAt, ...(sourceId ? { sourceId } : {}) };
 }

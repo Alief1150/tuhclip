@@ -1,5 +1,6 @@
 import { createLogger } from '../../shared/logger';
-import { parseCaptionBlock } from './captionParser';
+import { normalizeForComparison } from '../../transcript/normalization';
+import { parseCaptionBlock, rowKeyFor } from './captionParser';
 import { containsCaptionRegionCandidate, findCaptionBlocks, findCaptionRegion } from './selectors';
 import type { CaptionObservation, MeetStateSignal } from './types';
 
@@ -100,6 +101,28 @@ export function createCaptionObserver(options: CaptionObserverOptions): CaptionO
   let regionObserver: ObserverLike | undefined;
   let navigationCleanup: (() => void) | undefined;
   let searchLogged = false;
+  let rowKeyCounter = 0;
+  const rowKeysByElement = new WeakMap<object, string>();
+  const lastTextByRowKey = new Map<string, string>();
+
+  const rowKey = (block: Element): string => {
+    const explicit = rowKeyFor(block);
+    if (explicit) return `id:${explicit}`;
+    let key = rowKeysByElement.get(block);
+    if (!key) {
+      rowKeyCounter += 1;
+      key = `element#${rowKeyCounter}`;
+      rowKeysByElement.set(block, key);
+      logger.debug('New caption row tracked', key);
+    }
+    return key;
+  };
+
+  const forgetStaleRows = (seen: Set<string>): void => {
+    for (const key of lastTextByRowKey.keys()) {
+      if (!seen.has(key)) lastTextByRowKey.delete(key);
+    }
+  };
 
   const emitState = (next: MeetStateSignal) => {
     if (state === next) return;
@@ -112,6 +135,7 @@ export function createCaptionObserver(options: CaptionObserverOptions): CaptionO
     if (!region) return;
     const blocks = readBlocks(region);
     logger.debug('Caption row count', blocks.length);
+    const seen = new Set<string>();
     let foundCaption = false;
     for (const block of blocks) {
       logger.debug('Raw row text', block.textContent?.trim() ?? '');
@@ -119,11 +143,21 @@ export function createCaptionObserver(options: CaptionObserverOptions): CaptionO
       if (!observation) continue;
       foundCaption = true;
       hadCaption = true;
+      const key = rowKey(block);
+      seen.add(key);
+      const normalized = normalizeForComparison(observation.text);
+      if (lastTextByRowKey.get(key) === normalized) {
+        logger.debug('Row unchanged, observation suppressed', key);
+        continue;
+      }
+      lastTextByRowKey.set(key, normalized);
+      logger.debug('Row emitted', key);
       logger.debug('Speaker parsed', observation.speaker);
       logger.debug('Caption text parsed', observation.text);
       logger.debug('Parsed caption', observation.text);
       options.onObservation(observation);
     }
+    forgetStaleRows(seen);
     emitState(foundCaption ? 'CAPTIONS_ACTIVE' : hadCaption ? 'CAPTIONS_INACTIVE' : 'CAPTIONS_WAITING');
   };
 
@@ -140,6 +174,7 @@ export function createCaptionObserver(options: CaptionObserverOptions): CaptionO
     regionObserver?.disconnect();
     regionObserver = undefined;
     if (region) logger.debug('Caption region lost');
+    if (nextRegion !== region) lastTextByRowKey.clear();
     region = nextRegion;
 
     if (!region) {
@@ -204,6 +239,7 @@ export function createCaptionObserver(options: CaptionObserverOptions): CaptionO
     region = null;
     hadRegion = false;
     hadCaption = false;
+    lastTextByRowKey.clear();
     emitState('CAPTIONS_WAITING');
     queue('discover');
   };

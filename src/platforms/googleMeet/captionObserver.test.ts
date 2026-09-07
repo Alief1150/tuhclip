@@ -61,7 +61,7 @@ describe('createCaptionObserver', () => {
     observers[1].fire([{ type: 'characterData', target: region.children[0] } as unknown as MutationRecord]);
     expect(scheduled).toHaveLength(1);
     scheduled.shift()?.();
-    expect(observations).toHaveLength(2);
+    expect(observations).toHaveLength(1);
 
     const oldRegionObserver = observers[1];
     root.children = [];
@@ -107,6 +107,103 @@ describe('createCaptionObserver', () => {
     expect(target.history.pushState).toBe(originalPush);
     expect(target.history.replaceState).toBe(originalReplace);
     expect(events.size).toBe(0);
+  });
+
+  it('emits only the changed row when two rows are visible', () => {
+    const root = new TestElement('main');
+    const row1 = new TestElement('div', { 'data-caption-id': 'row-1' }, 'First line');
+    const row2 = new TestElement('div', { 'data-caption-id': 'row-2' }, 'Second line');
+    const region = new TestElement('div', { 'aria-live': 'polite' }).append(row1, row2);
+    root.append(region);
+    const observers: FakeObserver[] = [];
+    const scheduled: Array<() => void> = [];
+    const observations: Array<{ speaker: string | null; text: string }> = [];
+    const controller = createCaptionObserver({
+      root: asRoot(root),
+      resolveRegion: () => asElement(region),
+      readBlocks: () => region.children.map(asElement),
+      parseBlock: (block) => {
+        const row = block as unknown as TestElement;
+        return { speaker: 'Ada', text: row.textContent, observedAt: 10 };
+      },
+      makeObserver: (callback) => {
+        const observer = new FakeObserver(callback);
+        observers.push(observer);
+        return observer;
+      },
+      schedule: (task) => { scheduled.push(task); return scheduled.length; },
+      cancelSchedule: () => undefined,
+      addNavigationListener: () => undefined,
+      removeNavigationListener: () => undefined,
+      onState: () => undefined,
+      onObservation: (observation) => observations.push({ speaker: observation.speaker, text: observation.text }),
+    });
+
+    controller.start();
+    scheduled.shift()?.();
+    expect(observations).toEqual([
+      { speaker: 'Ada', text: 'First line' },
+      { speaker: 'Ada', text: 'Second line' },
+    ]);
+
+    row2.textContent = 'Second line extended';
+    observers.at(-1)?.fire([{ type: 'characterData', target: row2 } as unknown as MutationRecord]);
+    scheduled.shift()?.();
+    expect(observations).toEqual([
+      { speaker: 'Ada', text: 'First line' },
+      { speaker: 'Ada', text: 'Second line' },
+      { speaker: 'Ada', text: 'Second line extended' },
+    ]);
+
+    observers.at(-1)?.fire([{ type: 'childList', target: region } as unknown as MutationRecord]);
+    scheduled.shift()?.();
+    expect(observations).toHaveLength(3);
+    controller.stop();
+  });
+
+  it('emits each progressive update once and suppresses identical re-reads', () => {
+    const root = new TestElement('main');
+    const row = new TestElement('div', {}, 'word0');
+    const region = new TestElement('div', { 'aria-live': 'polite' }).append(row);
+    root.append(region);
+    const observers: FakeObserver[] = [];
+    const scheduled: Array<() => void> = [];
+    const observations: string[] = [];
+    const controller = createCaptionObserver({
+      root: asRoot(root),
+      resolveRegion: () => asElement(region),
+      readBlocks: () => region.children.map(asElement),
+      parseBlock: (block) => ({ speaker: 'Ada', text: (block as unknown as TestElement).textContent, observedAt: 10 }),
+      makeObserver: (callback) => {
+        const observer = new FakeObserver(callback);
+        observers.push(observer);
+        return observer;
+      },
+      schedule: (task) => { scheduled.push(task); return scheduled.length; },
+      cancelSchedule: () => undefined,
+      addNavigationListener: () => undefined,
+      removeNavigationListener: () => undefined,
+      onState: () => undefined,
+      onObservation: (observation) => observations.push(observation.text),
+    });
+
+    controller.start();
+    let text = 'word0';
+    for (let i = 1; i <= 20; i += 1) {
+      text += ` word${i}`;
+      row.textContent = text;
+      observers.at(-1)?.fire([{ type: 'characterData', target: row } as unknown as MutationRecord]);
+      scheduled.shift()?.();
+    }
+    expect(observations).toHaveLength(21);
+    expect(observations.at(-1)).toBe(text);
+
+    observers.at(-1)?.fire([{ type: 'characterData', target: row } as unknown as MutationRecord]);
+    observers.at(-1)?.fire([{ type: 'childList', target: region } as unknown as MutationRecord]);
+    scheduled.shift()?.();
+    scheduled.shift()?.();
+    expect(observations).toHaveLength(21);
+    controller.stop();
   });
 
   it('shares navigation hooks and does not overwrite a later owner during cleanup', () => {

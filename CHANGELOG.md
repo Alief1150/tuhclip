@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3] - 2026-09-07
+
+### Fixed
+- Suppressed unchanged caption-row re-emission in the Meet observer
+- Tracked caption rows by explicit sourceId with DOM-identity fallback
+- Merged rolling caption windows by word overlap without repetition
+
 ## [0.3.2] - 2026-09-07
 
 ### Fixed
