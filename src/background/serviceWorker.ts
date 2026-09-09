@@ -52,7 +52,7 @@ async function healContentScript(tabId: number): Promise<void> {
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!isRuntimeMessage(raw)) return false;
 
-  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY' || raw.type === 'SESSION_ENDED' || raw.type === 'MEET_HEARTBEAT' || raw.type === 'CAPTIONS_OFF' || raw.type === 'METADATA_UPDATE')) {
+  if (sender.tab && (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE' || raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN' || raw.type === 'MEETING_STARTED' || raw.type === 'CONTENT_SCRIPT_READY' || raw.type === 'SESSION_ENDED' || raw.type === 'MEET_HEARTBEAT' || raw.type === 'CAPTIONS_OFF' || raw.type === 'METADATA_UPDATE' || raw.type === 'CC_STATE_CHANGED')) {
     logger.debug('Message arrived from Meet tab', raw.type);
     if (raw.type === 'TRANSCRIPT_SEGMENT' || raw.type === 'TRANSCRIPT_TURN') {
       lastBackgroundTurn = { meetingId: raw.payload.meetingId, at: Date.now() };
@@ -101,6 +101,9 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     }
     if (raw.type === 'CAPTIONS_OFF') {
       sessions.setCaptionsOff(raw.payload.meetingId, true);
+    }
+    if (raw.type === 'CC_STATE_CHANGED') {
+      sessions.setCcOn(raw.payload.meetingId, raw.payload.ccOn);
     }
     if (raw.type === 'METADATA_UPDATE') {
       void updateMeetingMetadata(raw.payload.meetingId, {
@@ -215,6 +218,8 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
     return resolveSessionStatus(tab, readContentStatus, healContentScript, async (tabId) => {
       return sessions.getByTab(tabId)?.captionsOff ?? false;
+    }, async (tabId) => {
+      return sessions.getByTab(tabId)?.ccOn ?? null;
     });
   }).then((payload) => {
     const backgroundMeetingId = lastBackgroundTurn && Date.now() - lastBackgroundTurn.at <= BACKGROUND_RECENT_MS

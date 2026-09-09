@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createInjectionTracker, extractMeetCode, isMissingReceiverError, provisionalMeetingId } from './contentHealth';
+import { claimContentOwnership, createInjectionTracker, extractMeetCode, isMissingReceiverError, provisionalMeetingId } from './contentHealth';
 
 describe('contentHealth', () => {
   it('detects the missing-receiver connection error', () => {
@@ -11,6 +11,13 @@ describe('contentHealth', () => {
   it('refuses a provisional session identity without a meet code', () => {
     expect(provisionalMeetingId('')).toBeNull();
     expect(provisionalMeetingId('abc-defg-hij')).toBe('meet-abc-defg-hij');
+  });
+
+  it('grants content-script ownership exactly once per scope', () => {
+    const scope: Record<string, unknown> = {};
+    expect(claimContentOwnership(scope)).toBe(true);
+    expect(claimContentOwnership(scope)).toBe(false);
+    expect(claimContentOwnership({})).toBe(true);
   });
 
   it('extracts the Meet code from the page path', () => {

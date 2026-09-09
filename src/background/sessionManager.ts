@@ -13,6 +13,7 @@ export interface RuntimeSession {
   reconnectCount: number;
   status: RuntimeSessionStatus;
   captionsOff: boolean;
+  ccOn: boolean | null;
 }
 
 export interface Heartbeat {
@@ -56,6 +57,7 @@ export class SessionManager {
       reconnectCount: 0,
       status: 'active',
       captionsOff: false,
+      ccOn: null,
     };
     this.sessions.set(heartbeat.meetingId, session);
     return { ...session };
@@ -91,6 +93,13 @@ export class SessionManager {
     const session = this.sessions.get(meetingId);
     if (!session) return;
     session.captionsOff = off;
+  }
+
+  setCcOn(meetingId: string, ccOn: boolean): void {
+    const session = this.sessions.get(meetingId);
+    if (!session) return;
+    session.ccOn = ccOn;
+    if (ccOn) session.captionsOff = false;
   }
 
   resolveMeetingTab(meetingId: string): { tabId: number; windowId: number } | null {

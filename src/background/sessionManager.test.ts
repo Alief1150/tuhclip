@@ -101,6 +101,19 @@ describe('SessionManager', () => {
     expect(manager.get('meeting-A')?.captionsOff).toBe(false);
   });
 
+  it('tracks CC state per session and clears captions-off when CC returns', () => {
+    const manager = new SessionManager();
+    manager.registerOrHeartbeat({
+      meetingId: 'meeting-A', meetCode: 'aaa-bbbb-ccc', meetUrl: 'https://meet.google.com/aaa-bbbb-ccc',
+      title: 'Kelas', tabId: 101, windowId: 1, now: 1000,
+    });
+    manager.setCcOn('meeting-A', false);
+    expect(manager.get('meeting-A')?.ccOn).toBe(false);
+    manager.setCcOn('meeting-A', true);
+    expect(manager.get('meeting-A')?.ccOn).toBe(true);
+    expect(manager.get('meeting-A')?.captionsOff).toBe(false);
+  });
+
   it('prunes only old ended sessions', () => {
     const manager = new SessionManager();
     manager.registerOrHeartbeat(heartbeatA());

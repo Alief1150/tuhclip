@@ -58,7 +58,7 @@ function formatDuration(durationMs?: number): string {
   return `${minutes} min`;
 }
 
-function StatusBadge({ state }: { state: 'transcribing' | 'background' | 'waiting' | 'connecting' | 'reconnecting' | 'idle' }) {
+function StatusBadge({ state }: { state: 'transcribing' | 'background' | 'waiting' | 'speech' | 'connecting' | 'reconnecting' | 'idle' }) {
   if (state === 'transcribing') {
     return (
       <Badge variant="success">
@@ -80,6 +80,14 @@ function StatusBadge({ state }: { state: 'transcribing' | 'background' | 'waitin
       <Badge variant="warning">
         <span aria-hidden="true" className="size-1.5 rounded-full bg-warning-foreground" />
         Waiting for captions
+      </Badge>
+    );
+  }
+  if (state === 'speech') {
+    return (
+      <Badge variant="warning">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-warning-foreground" />
+        Waiting for speech
       </Badge>
     );
   }
@@ -399,6 +407,7 @@ export function App() {
         toastManager.add({ title: 'Meet tab unavailable', description: 'The tab may have been closed.', type: 'warning' });
       });
   }, [meeting, refresh]);
+  const captionsDeclaredOff = signals?.captionsOff === true || signals?.ccOn === false;
   const statusBadge = (() => {
     if (!signals || error) {
       return backgroundActive ? <StatusBadge state="background" /> : <StatusBadge state="connecting" />;
@@ -409,6 +418,7 @@ export function App() {
     }
     if (state === 'transcribing' || hasTranscript) return <StatusBadge state="transcribing" />;
     if (state === 'idle') return <StatusBadge state="idle" />;
+    if (signals.ccOn === true) return <StatusBadge state="speech" />;
     return <StatusBadge state="waiting" />;
   })();
 
@@ -444,7 +454,7 @@ export function App() {
                   )}
                 </div>
               </div>
-              {signals?.captionsOff && (
+              {captionsDeclaredOff && (
                 <div role="alert" className="rounded-md border border-warning bg-warning/10 px-2.5 py-2">
                   <p className="text-sm font-semibold text-warning-foreground">Captions are off</p>
                   <p className="text-xs text-muted-foreground">
@@ -522,11 +532,21 @@ export function App() {
               ) : !hasTranscript ? (
                 <Empty className="py-8">
                   <EmptyHeader>
-                    <EmptyTitle>{state === 'idle' ? 'No new caption text' : 'Turn on Meet captions'}</EmptyTitle>
+                    <EmptyTitle>
+                      {state === 'idle'
+                        ? 'No new caption text'
+                        : captionsDeclaredOff
+                          ? 'Turn on Meet captions'
+                          : signals?.ccOn === true
+                            ? 'Waiting for speech'
+                            : 'Turn on Meet captions'}
+                    </EmptyTitle>
                     <EmptyDescription>
                       {state === 'idle'
                         ? 'The meeting may have ended or paused. Existing transcript text is kept locally.'
-                        : 'Use the captions button in Google Meet. tuhclip will listen once text appears. No microphone or audio permission is used.'}
+                        : signals?.ccOn === true && !captionsDeclaredOff
+                          ? 'Captions are on. Start speaking and the transcript will appear here.'
+                          : 'Use the captions button in Google Meet. tuhclip will listen once text appears. No microphone or audio permission is used.'}
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>

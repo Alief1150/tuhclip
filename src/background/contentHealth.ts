@@ -13,6 +13,13 @@ export function provisionalMeetingId(meetCode: string): string | null {
   return meetCode ? `meet-${meetCode}` : null;
 }
 
+export function claimContentOwnership(scope: object, key = '__tuhclipContentInitialized'): boolean {
+  const record = scope as Record<string, unknown>;
+  if (record[key] === true) return false;
+  record[key] = true;
+  return true;
+}
+
 export function createInjectionTracker() {
   const inFlight = new Set<number>();
   const injected = new Set<number>();

@@ -4,6 +4,7 @@ export type SessionSignals = {
   contentMissing: boolean;
   backgroundMeetingId: string | null;
   captionsOff: boolean;
+  ccOn: boolean | null;
   lifecycle: MeetingLifecycle;
 };
 
@@ -35,6 +36,10 @@ export type RuntimeMessage =
   | {
       type: 'CAPTIONS_OFF';
       payload: { meetingId: string; since: number };
+    }
+  | {
+      type: 'CC_STATE_CHANGED';
+      payload: { meetingId: string; ccOn: boolean };
     }
   | {
       type: 'METADATA_UPDATE';
@@ -75,6 +80,7 @@ const isSignals = (value: unknown): value is SessionSignals => {
     && typeof signals.contentMissing === 'boolean'
     && (signals.backgroundMeetingId === null || typeof signals.backgroundMeetingId === 'string')
     && typeof signals.captionsOff === 'boolean'
+    && (signals.ccOn === null || typeof signals.ccOn === 'boolean')
     && isLifecycle(signals.lifecycle);
 };
 
@@ -183,6 +189,12 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
       && typeof (message.payload as Record<string, unknown>).title === 'string'
       && typeof (message.payload as Record<string, unknown>).quality === 'number';
   }
+  if (message.type === 'CC_STATE_CHANGED') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && typeof (message.payload as Record<string, unknown>).meetingId === 'string'
+      && typeof (message.payload as Record<string, unknown>).ccOn === 'boolean';
+  }
   if (message.type === 'SESSION_ENDED') {
     return !!message.payload
       && typeof message.payload === 'object'
@@ -211,6 +223,7 @@ const isRuntimeSession = (value: unknown): value is RuntimeSession => {
     && typeof session.lastSeenAt === 'number'
     && typeof session.reconnectCount === 'number'
     && typeof session.captionsOff === 'boolean'
+    && (session.ccOn === null || typeof session.ccOn === 'boolean')
     && (session.status === 'active' || session.status === 'disconnected' || session.status === 'ended');
 };
 

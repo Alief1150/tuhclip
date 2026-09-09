@@ -1,5 +1,6 @@
 import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
-import { extractMeetCode } from '../background/contentHealth';
+import { claimContentOwnership, extractMeetCode } from '../background/contentHealth';
+import { readCaptionControlState } from '../platforms/googleMeet/captionControl';
 import { resolveMeetingMetadata, resolveSpeakerName } from '../platforms/googleMeet/meetingMetadata';
 import { createCaptionObserver } from '../platforms/googleMeet/captionObserver';
 import type { MeetStateSignal } from '../platforms/googleMeet/types';
@@ -17,10 +18,9 @@ declare global {
 
 const bootLogger = createLogger('content');
 
-if (window.__tuhclipContentInitialized) {
+if (!claimContentOwnership(window)) {
   bootLogger.info('duplicate content script instance ignored');
 } else {
-  window.__tuhclipContentInitialized = true;
   void init().catch((cause) => bootLogger.info('content script init failed', cause));
 }
 
@@ -129,10 +129,19 @@ async function init(): Promise<void> {
   sendHeartbeat();
   const heartbeatTimer = window.setInterval(sendHeartbeat, 15_000);
 
-  const inactivityTimer = window.setInterval(flushFinalized, 1000);
-
   let captionsOffTimer: number | undefined;
   let captionsOffSent = false;
+  let lastCc: 'on' | 'off' | 'unknown' = 'unknown';
+
+  const checkCaptionControl = () => {
+    const state = readCaptionControlState(document);
+    if (state === lastCc || state === 'unknown') return;
+    lastCc = state;
+    safeSend({ type: 'CC_STATE_CHANGED', payload: { meetingId, ccOn: state === 'on' } });
+  };
+
+  const inactivityTimer = window.setInterval(flushFinalized, 1000);
+  const ccCheckTimer = window.setInterval(checkCaptionControl, 10_000);
 
   const observer = createCaptionObserver({
     onState: (next) => {
@@ -155,6 +164,7 @@ async function init(): Promise<void> {
           }, CAPTION_OFF_GRACE_MS);
         }
       }
+      checkCaptionControl();
       safeSend({ type: next, payload: { meetingId } });
     },
     onObservation: (observation) => {
@@ -173,6 +183,7 @@ async function init(): Promise<void> {
   window.addEventListener('pagehide', () => {
     window.clearInterval(inactivityTimer);
     window.clearInterval(heartbeatTimer);
+    window.clearInterval(ccCheckTimer);
     if (captionsOffTimer !== undefined) window.clearTimeout(captionsOffTimer);
     absorbChunk(engine.meetingEnded(Date.now()));
     safeSend({ type: 'SESSION_ENDED', payload: { meetingId, endedAt: Date.now() } });
@@ -188,6 +199,7 @@ async function init(): Promise<void> {
       return false;
     }
     if (raw.type !== 'GET_CONTENT_STATUS') return false;
+    checkCaptionControl();
     sendResponse({ type: 'CONTENT_STATUS', payload: { signal } } satisfies RuntimeMessage);
     return false;
   });
