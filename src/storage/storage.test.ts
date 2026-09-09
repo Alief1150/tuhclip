@@ -140,6 +140,12 @@ describe('storage', () => {
     expect((stored[0] as unknown as { finalized: boolean }).finalized).toBe(true);
   });
 
+  it('does not store provisional meetings without a meet code', async () => {
+    const result = await getOrResumeMeeting('', { title: '', meetUrl: 'https://meet.google.com/landing' }, 1000);
+    expect(result.resumed).toBe(false);
+    expect(await listMeetings()).toEqual([]);
+  });
+
   it('returns empty lists for corrupt or missing data without throwing', async () => {
     expect(await listSegments('missing')).toEqual([]);
     expect(await listMeetings()).toEqual([]);

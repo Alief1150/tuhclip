@@ -114,6 +114,16 @@ describe('SessionManager', () => {
     expect(manager.get('meeting-A')?.captionsOff).toBe(false);
   });
 
+  it('lists sessions per tab for lifecycle handling', () => {
+    const manager = new SessionManager();
+    manager.registerOrHeartbeat({
+      meetingId: 'meeting-A', meetCode: 'aaa-bbbb-ccc', meetUrl: 'https://meet.google.com/aaa-bbbb-ccc',
+      title: 'Kelas', tabId: 101, windowId: 1, now: 1000,
+    });
+    expect(manager.sessionsForTab(101).map((session) => session.meetingId)).toEqual(['meeting-A']);
+    expect(manager.sessionsForTab(999)).toEqual([]);
+  });
+
   it('prunes only old ended sessions', () => {
     const manager = new SessionManager();
     manager.registerOrHeartbeat(heartbeatA());

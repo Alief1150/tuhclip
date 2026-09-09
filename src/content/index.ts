@@ -68,7 +68,11 @@ async function init(): Promise<void> {
   bootLogger.info('initialized');
   bootLogger.info('meet code:', meetCode || '(none)');
 
-  const { meetingId, meetingStart, recentTurn } = await requestSession(meetCode);
+  const hasIdentity = meetCode !== '';
+  const { meetingId, meetingStart, recentTurn } = hasIdentity
+    ? await requestSession(meetCode)
+    : { meetingId: '', meetingStart: Date.now(), recentTurn: null };
+  if (!hasIdentity) bootLogger.info('no meet code, running without a persistent session');
   const metadata = resolveMeetingMetadata(document, meetCode);
   const localName = metadata.localName;
   if (localName) bootLogger.info('local participant name resolved');
@@ -92,6 +96,7 @@ async function init(): Promise<void> {
 
   const emitTurn = (turn: SpeakerTurn) => {
     transcriptLogger.debug(turn.finalized ? 'Turn finalized' : 'Turn updated', turn.speaker, turn.text);
+    if (!hasIdentity) return;
     safeSend({ type: 'TRANSCRIPT_TURN', payload: turn });
   };
 
@@ -102,7 +107,7 @@ async function init(): Promise<void> {
   };
 
   const announceMeeting = () => {
-    if (meetingAnnounced) return;
+    if (meetingAnnounced || !hasIdentity) return;
     meetingAnnounced = true;
     safeSend({
       type: 'MEETING_STARTED',

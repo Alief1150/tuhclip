@@ -108,6 +108,12 @@ export class SessionManager {
     return { tabId: session.tabId, windowId: session.windowId };
   }
 
+  sessionsForTab(tabId: number): RuntimeSession[] {
+    return [...this.sessions.values()]
+      .filter((session) => session.tabId === tabId)
+      .map((session) => ({ ...session }));
+  }
+
   getActive(): RuntimeSession[] {
     return [...this.sessions.values()]
       .filter((session) => session.status === 'active')

@@ -27,6 +27,40 @@ async function readContentStatus(tabId: number) {
   }
 }
 
+function isMeetUrl(url: string | undefined): boolean {
+  return url?.startsWith('https://meet.google.com/') === true;
+}
+
+async function reconcileSessionsWithTabs(): Promise<void> {
+  for (const session of sessions.getActive()) {
+    try {
+      const tab = await chrome.tabs.get(session.tabId);
+      if (!tab || !isMeetUrl(tab.url)) {
+        sessions.markDisconnected(session.meetingId, Date.now());
+      }
+    } catch {
+      sessions.markDisconnected(session.meetingId, Date.now());
+    }
+  }
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const session of sessions.sessionsForTab(tabId)) {
+    if (session.status === 'active') sessions.markDisconnected(session.meetingId, Date.now());
+  }
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url !== undefined || changeInfo.status === 'complete') {
+    const url = changeInfo.url ?? tab.url;
+    if (url !== undefined && !isMeetUrl(url)) {
+      for (const session of sessions.sessionsForTab(tabId)) {
+        if (session.status === 'active') sessions.markDisconnected(session.meetingId, Date.now());
+      }
+    }
+  }
+});
+
 async function pingContent(tabId: number): Promise<boolean> {
   try {
     const response: unknown = await chrome.tabs.sendMessage(tabId, { type: 'PING_CONTENT_SCRIPT' } satisfies RuntimeMessage);
@@ -85,7 +119,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         now: Date.now(),
       });
     }
-    if (raw.type === 'MEETING_STARTED') {
+    if (raw.type === 'MEETING_STARTED' && meetCodeFromUrl(raw.payload.meetUrl)) {
       lastBackgroundTurn = { meetingId: raw.payload.meetingId, at: Date.now() };
       void createMeeting({
         id: raw.payload.meetingId,
@@ -134,6 +168,13 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   }
 
   if (raw.type === 'GET_OR_RESUME_MEETING_SESSION') {
+    if (!raw.payload.meetCode) {
+      sendResponse({
+        type: 'MEETING_SESSION',
+        payload: { meetingId: '', startedAt: Date.now(), resumed: false, recentTurn: null },
+      } satisfies RuntimeMessage);
+      return false;
+    }
     getOrResumeMeeting(raw.payload.meetCode, {
       title: raw.payload.title,
       meetUrl: raw.payload.meetUrl,
@@ -157,8 +198,10 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     for (const meetingId of ended) {
       void endMeeting(meetingId, Date.now()).catch((error) => logger.debug('Background meeting end failed', error));
     }
-    sendResponse({ type: 'ACTIVE_SESSIONS', payload: { sessions: sessions.getActive() } } satisfies RuntimeMessage);
-    return false;
+    void reconcileSessionsWithTabs().then(() => {
+      sendResponse({ type: 'ACTIVE_SESSIONS', payload: { sessions: sessions.getActive() } } satisfies RuntimeMessage);
+    });
+    return true;
   }
 
   if (raw.type === 'OPEN_MEETING_TAB') {

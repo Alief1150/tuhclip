@@ -56,13 +56,12 @@ export async function getOrResumeMeeting(
   const fallbackTitle = info.title.trim() || meetingTitleFallback(now, meetCode);
   if (!meetCode) {
     const fresh: MeetingSession = {
-      id: `meet-${now.toString(36)}`,
+      id: '',
       title: fallbackTitle,
       meetUrl: info.meetUrl,
       startedAt: now,
       createdAt: now,
     };
-    await storePut('meetings', fresh);
     return { meeting: fresh, resumed: false, recentTurn: null };
   }
   const existing = await getMeeting(meetingIdForCode(meetCode)).catch(() => null);
