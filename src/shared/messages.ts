@@ -13,6 +13,7 @@ export type RuntimeMessage =
   | { type: 'GET_SESSION_STATUS' }
   | { type: 'GET_CONTENT_STATUS' }
   | { type: 'CONTENT_STATUS'; payload: { signal: MeetStateSignal } }
+  | { type: MeetStateSignal; payload: { meetingId: string } }
   | { type: 'CONTENT_SCRIPT_READY'; payload: { meetCode: string; url: string; startedAt: number } }
   | {
       type: 'GET_OR_RESUME_MEETING_SESSION';
@@ -47,10 +48,14 @@ export type RuntimeMessage =
   | { type: 'ACTIVE_SESSIONS'; payload: { sessions: RuntimeSession[] } }
   | { type: 'OPEN_MEETING_TAB'; payload: { meetingId: string } }
   | { type: 'MEETING_TAB_OPENED'; payload: { meetingId: string; ok: boolean } }
+  | { type: 'SYNC_ACTIVE_TAB' }
+  | {
+      type: 'ACTIVE_TAB_SYNCED';
+      payload: { session: RuntimeSession | null; contentAlive: boolean; healed: boolean };
+    }
   | { type: 'PING_CONTENT_SCRIPT' }
   | { type: 'PONG_CONTENT_SCRIPT'; payload: { meetCode: string; signal: MeetStateSignal } }
   | { type: 'SESSION_STATUS'; payload: SessionSignals }
-  | { type: MeetStateSignal }
   | { type: 'CAPTION_OBSERVATION'; payload: CaptionObservation }
   | { type: 'TRANSCRIPT_SEGMENT'; payload: TranscriptSegment }
   | { type: 'TRANSCRIPT_TURN'; payload: TranscriptTurn }
@@ -85,6 +90,7 @@ const isCaptionObservation = (value: unknown): value is CaptionObservation => {
     && typeof observation.text === 'string'
     && observation.text.length > 0
     && typeof observation.observedAt === 'number'
+    && typeof observation.meetingId === 'string'
     && (observation.sourceId === undefined || typeof observation.sourceId === 'string');
 };
 
@@ -97,8 +103,17 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
   if (message.type === 'GET_SESSION_STATUS'
     || message.type === 'GET_CONTENT_STATUS'
     || message.type === 'PING_CONTENT_SCRIPT'
-    || message.type === 'GET_ACTIVE_SESSIONS') {
+    || message.type === 'GET_ACTIVE_SESSIONS'
+    || message.type === 'SYNC_ACTIVE_TAB') {
     return message.payload === undefined;
+  }
+  if (message.type === 'ACTIVE_TAB_SYNCED') {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && ((message.payload as Record<string, unknown>).session === null
+        || isRuntimeSession((message.payload as Record<string, unknown>).session))
+      && typeof (message.payload as Record<string, unknown>).contentAlive === 'boolean'
+      && typeof (message.payload as Record<string, unknown>).healed === 'boolean';
   }
   if (message.type === 'OPEN_MEETING_TAB') {
     return !!message.payload
@@ -131,20 +146,17 @@ export function isRuntimeMessage(value: unknown): value is RuntimeMessage {
       && ['meetCode', 'title', 'meetUrl'].every((key) => typeof (message.payload as Record<string, unknown>)[key] === 'string')
       && typeof (message.payload as Record<string, unknown>).now === 'number';
   }
-  if (message.type === 'MEETING_SESSION') {
-    return !!message.payload
-      && typeof message.payload === 'object'
-      && typeof (message.payload as Record<string, unknown>).meetingId === 'string'
-      && typeof (message.payload as Record<string, unknown>).startedAt === 'number'
-      && typeof (message.payload as Record<string, unknown>).resumed === 'boolean';
-  }
   if (message.type === 'PONG_CONTENT_SCRIPT') {
     return !!message.payload
       && typeof message.payload === 'object'
       && typeof (message.payload as Record<string, unknown>).meetCode === 'string'
       && isMeetStateSignal((message.payload as Record<string, unknown>).signal);
   }
-  if (isMeetStateSignal(message.type)) return message.payload === undefined;
+  if (isMeetStateSignal(message.type)) {
+    return !!message.payload
+      && typeof message.payload === 'object'
+      && typeof (message.payload as Record<string, unknown>).meetingId === 'string';
+  }
   if (message.type === 'CONTENT_STATUS') {
     return !!message.payload
       && typeof message.payload === 'object'

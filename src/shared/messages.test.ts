@@ -20,17 +20,34 @@ describe('isRuntimeMessage', () => {
   });
 
   it('accepts Meet state signals and caption observations but rejects malformed observations', () => {
-    expect(isRuntimeMessage({ type: 'MEET_DETECTED' })).toBe(true);
-    expect(isRuntimeMessage({ type: 'CAPTIONS_WAITING' })).toBe(true);
-    expect(isRuntimeMessage({ type: 'CAPTIONS_ACTIVE' })).toBe(true);
-    expect(isRuntimeMessage({ type: 'CAPTIONS_INACTIVE' })).toBe(true);
+    expect(isRuntimeMessage({ type: 'MEET_DETECTED', payload: { meetingId: 'meeting-A' } })).toBe(true);
+    expect(isRuntimeMessage({ type: 'CAPTIONS_WAITING', payload: { meetingId: 'meeting-A' } })).toBe(true);
+    expect(isRuntimeMessage({ type: 'CAPTIONS_ACTIVE', payload: { meetingId: 'meeting-A' } })).toBe(true);
+    expect(isRuntimeMessage({ type: 'CAPTIONS_INACTIVE', payload: { meetingId: 'meeting-A' } })).toBe(true);
+    expect(isRuntimeMessage({ type: 'MEET_DETECTED' })).toBe(false);
     expect(isRuntimeMessage({
       type: 'CAPTION_OBSERVATION',
-      payload: { speaker: 'Unknown speaker', text: 'Hello', observedAt: 10, sourceId: 'a' },
+      payload: { speaker: 'Unknown speaker', text: 'Hello', observedAt: 10, sourceId: 'a', meetingId: 'meeting-A' },
     })).toBe(true);
     expect(isRuntimeMessage({
       type: 'CAPTION_OBSERVATION',
+      payload: { speaker: 'Unknown speaker', text: 'Hello', observedAt: 10 },
+    })).toBe(false);
+    expect(isRuntimeMessage({
+      type: 'CAPTION_OBSERVATION',
       payload: { speaker: 'Ada', text: '', observedAt: 'now' },
+    })).toBe(false);
+  });
+
+  it('accepts active-tab sync requests and results', () => {
+    expect(isRuntimeMessage({ type: 'SYNC_ACTIVE_TAB' })).toBe(true);
+    expect(isRuntimeMessage({
+      type: 'ACTIVE_TAB_SYNCED',
+      payload: { session: null, contentAlive: false, healed: false },
+    })).toBe(true);
+    expect(isRuntimeMessage({
+      type: 'ACTIVE_TAB_SYNCED',
+      payload: { session: { meetingId: 'x' }, contentAlive: true, healed: false },
     })).toBe(false);
   });
 

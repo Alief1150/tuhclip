@@ -155,7 +155,7 @@ async function init(): Promise<void> {
           }, CAPTION_OFF_GRACE_MS);
         }
       }
-      safeSend({ type: next });
+      safeSend({ type: next, payload: { meetingId } });
     },
     onObservation: (observation) => {
       announceMeeting();
@@ -164,7 +164,7 @@ async function init(): Promise<void> {
       const hadActive = engine.active !== null;
       engine.ingest(normalized);
       transcriptLogger.debug(hadActive ? 'Active segment updated' : 'Active segment created', normalized.speaker, normalized.text);
-      safeSend({ type: 'CAPTION_OBSERVATION', payload: normalized });
+      safeSend({ type: 'CAPTION_OBSERVATION', payload: { ...normalized, meetingId } });
     },
   });
 

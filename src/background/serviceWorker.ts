@@ -3,7 +3,7 @@ import { createLogger } from '../shared/logger';
 import { SESSION_RESUME_WINDOW_MS, createMeeting, endMeeting, getOrResumeMeeting, meetCodeFromUrl, meetingTitleFallback, updateMeetingMetadata } from '../storage/meetings';
 import { upsertSegment } from '../storage/segments';
 import { createInjectionTracker, extractMeetCode, isMissingReceiverError, provisionalMeetingId } from './contentHealth';
-import { shouldRelayToExtension } from './messageRelay';
+import { shouldRelaySessionUpdate } from './messageRelay';
 import { SessionManager } from './sessionManager';
 import { resolveSessionStatus } from './sessionStatus';
 
@@ -24,6 +24,15 @@ async function readContentStatus(tabId: number) {
     if (isMissingReceiverError(error)) throw error;
     logger.debug('Content status unreadable', error);
     return null;
+  }
+}
+
+async function pingContent(tabId: number): Promise<boolean> {
+  try {
+    const response: unknown = await chrome.tabs.sendMessage(tabId, { type: 'PING_CONTENT_SCRIPT' } satisfies RuntimeMessage);
+    return isRuntimeMessage(response) && response.type === 'PONG_CONTENT_SCRIPT';
+  } catch {
+    return false;
   }
 }
 
@@ -115,11 +124,9 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       });
       return false;
     }
-    chrome.tabs.query({ active: true, currentWindow: true }).then(([activeTab]) => {
-      if (shouldRelayToExtension(raw, sender.tab ?? {}, activeTab)) {
-        return chrome.runtime.sendMessage(raw);
-      }
-    }).catch(() => undefined);
+    if (shouldRelaySessionUpdate(raw, sender.tab ?? {})) {
+      void chrome.runtime.sendMessage(raw).catch(() => undefined);
+    }
     return false;
   }
 
@@ -170,6 +177,35 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       logger.debug('Open meeting tab failed', error);
       sessions.markDisconnected(raw.payload.meetingId, Date.now());
       sendResponse({ type: 'MEETING_TAB_OPENED', payload: { meetingId: raw.payload.meetingId, ok: false } } satisfies RuntimeMessage);
+    });
+    return true;
+  }
+
+  if (raw.type === 'SYNC_ACTIVE_TAB') {
+    chrome.tabs.query({ active: true, currentWindow: true }).then(async ([tab]) => {
+      if (!tab?.url?.startsWith('https://meet.google.com/') || tab.id === undefined) {
+        return { session: null as ReturnType<typeof sessions.getByTab>, contentAlive: false, healed: false };
+      }
+      const session = sessions.getByTab(tab.id);
+      let contentAlive = await pingContent(tab.id);
+      let healed = false;
+      if (!contentAlive) {
+        try {
+          await healContentScript(tab.id);
+          healed = true;
+          for (let attempt = 0; attempt < 4 && !contentAlive; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            contentAlive = await pingContent(tab.id);
+          }
+        } catch (error) {
+          logger.debug('Active-tab heal failed', error);
+        }
+      }
+      return { session: sessions.getByTab(tab.id), contentAlive, healed };
+    }).then(({ session, contentAlive, healed }) => {
+      sendResponse({ type: 'ACTIVE_TAB_SYNCED', payload: { session, contentAlive, healed } } satisfies RuntimeMessage);
+    }).catch(() => {
+      sendResponse({ type: 'ACTIVE_TAB_SYNCED', payload: { session: null, contentAlive: false, healed: false } } satisfies RuntimeMessage);
     });
     return true;
   }

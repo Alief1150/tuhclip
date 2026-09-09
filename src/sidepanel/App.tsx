@@ -191,7 +191,8 @@ export function App() {
   }, []);
 
   const autoSelectSession = useCallback((meetingId: string) => {
-    if (selectedByUser.current || meetingRef.current?.id === meetingId) return;
+    if (meetingRef.current) return;
+    selectedByUser.current = false;
     void selectSession(meetingId, false);
   }, [selectSession]);
 
@@ -204,6 +205,27 @@ export function App() {
       setHistoryError(true);
     }
   }, []);
+
+  const syncActiveTab = useCallback(async () => {
+    try {
+      const response: unknown = await chrome.runtime.sendMessage({ type: 'SYNC_ACTIVE_TAB' } satisfies RuntimeMessage);
+      if (!isRuntimeMessage(response) || response.type !== 'ACTIVE_TAB_SYNCED') return;
+      const { session, contentAlive, healed } = response.payload;
+      if (!session) {
+        toastManager.add({ title: 'Not a Meet tab', description: 'Keeping the current meeting.', type: 'info' });
+        return;
+      }
+      await selectSession(session.meetingId, true);
+      if (!contentAlive) {
+        toastManager.add({ title: 'Meet tab found', description: 'The caption reader is not responding. Refresh the Meet tab.', type: 'warning' });
+      } else if (healed) {
+        toastManager.add({ title: 'Caption reader reconnected', description: session.title || session.meetCode, type: 'success' });
+      }
+      retry.current();
+    } catch (cause) {
+      logger.error('Active-tab sync failed', cause);
+    }
+  }, [selectSession]);
 
   useEffect(() => {
     const poll = createSequentialPoll(refresh, 2000);
@@ -244,9 +266,12 @@ export function App() {
     const onSignal = (raw: unknown) => {
       if (!isRuntimeMessage(raw)) return;
       if (raw.type === 'MEET_DETECTED' || raw.type === 'CAPTIONS_WAITING' || raw.type === 'CAPTIONS_ACTIVE' || raw.type === 'CAPTIONS_INACTIVE') {
-        retry.current();
-        if (raw.type === 'CAPTIONS_INACTIVE') {
-          setActiveCaption(null);
+        const displayed = meetingRef.current?.id;
+        if (!displayed || displayed === raw.payload.meetingId) {
+          retry.current();
+          if (raw.type === 'CAPTIONS_INACTIVE') {
+            setActiveCaption(null);
+          }
         }
         return;
       }
@@ -260,7 +285,7 @@ export function App() {
           createdAt: Date.now(),
         };
         void createMeeting(session).then((stored) => {
-          if (meetingRef.current?.id !== stored.id && selectedByUser.current) {
+          if (meetingRef.current) {
             void refreshHistory();
             return;
           }
@@ -285,6 +310,8 @@ export function App() {
         return;
       }
       if (raw.type === 'CAPTION_OBSERVATION') {
+        const displayed = meetingRef.current?.id;
+        if (displayed && raw.payload.meetingId !== displayed) return;
         setActiveCaption({
           speaker: raw.payload.speaker?.trim() ? raw.payload.speaker : 'Unknown speaker',
           text: raw.payload.text,
@@ -456,7 +483,7 @@ export function App() {
                     <EmptyTitle>Could not read this tab</EmptyTitle>
                     <EmptyDescription>Chrome did not return the meeting status. Check the active tab, then retry.</EmptyDescription>
                   </EmptyHeader>
-                  <Button size="sm" onClick={() => retry.current()}>Check active tab</Button>
+                  <Button size="sm" onClick={() => void syncActiveTab()}>Check active tab</Button>
                 </Empty>
               ) : !signals ? (
                 <Empty className="py-8">
@@ -482,7 +509,7 @@ export function App() {
                     <EmptyTitle>Open a Google Meet tab</EmptyTitle>
                     <EmptyDescription>tuhclip reads captions from the active Google Meet tab. Your transcript stays in this browser.</EmptyDescription>
                   </EmptyHeader>
-                  <Button size="sm" onClick={() => retry.current()}>Check active tab</Button>
+                  <Button size="sm" onClick={() => void syncActiveTab()}>Check active tab</Button>
                 </Empty>
               ) : state === 'meet-detected' && !backgroundActive ? (
                 <Empty className="py-8">

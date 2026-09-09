@@ -3,6 +3,7 @@ export interface CaptionObservation {
   text: string;
   observedAt: number;
   sourceId?: string;
+  meetingId?: string;
 }
 
 export type MeetStateSignal =
