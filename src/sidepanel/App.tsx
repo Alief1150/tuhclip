@@ -6,7 +6,8 @@ import { toMarkdown } from '../export/markdown';
 import { toText } from '../export/text';
 import { isRuntimeMessage, type RuntimeMessage, type SessionSignals } from '../shared/messages';
 import { createLogger } from '../shared/logger';
-import { createMeeting, getMeeting, listMeetings, meetCodeFromUrl, meetingTitleFallback, type MeetingHistoryEntry, type MeetingSession } from '../storage/meetings';
+import { createMeeting, deleteMeeting, getMeeting, listMeetings, meetCodeFromUrl, meetingTitleFallback, setMeetingArchived, type MeetingHistoryEntry, type MeetingSession } from '../storage/meetings';
+import { buildHistoryZip } from '../export/zip';
 import type { RuntimeSession } from '../background/sessionManager';
 import { listSegments, upsertSegment } from '../storage/segments';
 import type { TranscriptSegment } from '../transcript/types';
@@ -15,6 +16,7 @@ import { createSequentialPoll } from './poll';
 import { FollowTracker, isNearBottom, type FollowState } from './followLatest';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { Checkbox } from '../ui/checkbox';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../ui/empty';
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from '../ui/menu';
 import { ScrollArea } from '../ui/scroll-area';
@@ -160,6 +162,10 @@ export function App() {
   const [historyError, setHistoryError] = useState(false);
   const [viewing, setViewing] = useState<{ meeting: MeetingSession; segments: TranscriptSegment[] } | null>(null);
   const [activeSessions, setActiveSessions] = useState<RuntimeSession[]>([]);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const selectedByUser = useRef(false);
   const retry = useRef<() => void>(() => undefined);
   const meetingRef = useRef<MeetingSession | null>(null);
@@ -229,13 +235,87 @@ export function App() {
 
   const refreshHistory = useCallback(async () => {
     try {
-      setHistory(await listMeetings());
+      const entries = await listMeetings({ includeArchived: showArchived });
+      setHistory(entries);
+      setSelectedIds((previous) => previous.filter((id) => entries.some((entry) => entry.id === id)));
       setHistoryError(false);
     } catch (cause) {
       logger.error('History load failed', cause);
       setHistoryError(true);
     }
+  }, [showArchived]);
+
+  const toggleSelect = useCallback((id: string, checked: boolean) => {
+    setSelectedIds((previous) => checked
+      ? (previous.includes(id) ? previous : [...previous, id])
+      : previous.filter((entry) => entry !== id));
+    setConfirmingDelete(false);
   }, []);
+
+  const archiveSelected = useCallback(async (archived: boolean) => {
+    try {
+      for (const id of selectedIds) {
+        await setMeetingArchived(id, archived ? Date.now() : null);
+      }
+      setSelectedIds([]);
+      setConfirmingDelete(false);
+      await refreshHistory();
+      toastManager.add({
+        title: archived ? 'Meetings archived' : 'Meetings restored',
+        description: `${selectedIds.length} meeting(s) updated.`,
+        type: 'success',
+      });
+    } catch (cause) {
+      logger.error('Archive failed', cause);
+      toastManager.add({ title: 'Archive failed', description: 'Could not update the meetings.', type: 'error' });
+    }
+  }, [selectedIds, refreshHistory]);
+
+  const deleteSelected = useCallback(async () => {
+    try {
+      const targets = [...selectedIds];
+      for (const id of targets) {
+        await deleteMeeting(id);
+      }
+      if (meetingRef.current && targets.includes(meetingRef.current.id)) {
+        setMeeting(null);
+        setSegments([]);
+        setActiveCaption(null);
+      }
+      setViewing((previous) => previous && targets.includes(previous.meeting.id) ? null : previous);
+      setSelectedIds([]);
+      setConfirmingDelete(false);
+      await refreshHistory();
+      toastManager.add({ title: 'Meetings deleted', description: `${targets.length} meeting(s) removed.`, type: 'success' });
+    } catch (cause) {
+      logger.error('Delete failed', cause);
+      toastManager.add({ title: 'Delete failed', description: 'Could not remove the meetings.', type: 'error' });
+    }
+  }, [selectedIds, refreshHistory]);
+
+  const downloadSelectedZip = useCallback(async () => {
+    try {
+      const entries = history
+        .filter((entry) => selectedIds.includes(entry.id))
+        .map((meeting) => ({ meeting }));
+      const version = chrome.runtime.getManifest().version;
+      const blob = await buildHistoryZip(entries, { version, exportedAt: Date.now() });
+      const date = new Date().toISOString().slice(0, 10);
+      const filename = `tuhclip-history-${date}.zip`;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toastManager.add({ title: 'ZIP saved', description: filename, type: 'success' });
+    } catch (cause) {
+      logger.error('ZIP export failed', cause);
+      toastManager.add({ title: 'ZIP export failed', description: 'Could not build the archive.', type: 'error' });
+    }
+  }, [history, selectedIds]);
 
   const syncActiveTab = useCallback(async () => {
     try {
@@ -658,29 +738,109 @@ export function App() {
               ) : history.length === 0 ? (
                 <Empty className="py-8">
                   <EmptyHeader>
-                    <EmptyTitle>No meetings yet</EmptyTitle>
-                    <EmptyDescription>Finalized transcripts appear here after your first captioned meeting.</EmptyDescription>
+                    <EmptyTitle>{showArchived ? 'No archived meetings' : 'No meetings yet'}</EmptyTitle>
+                    <EmptyDescription>
+                      {showArchived
+                        ? 'Archived meetings appear here.'
+                        : 'Finalized transcripts appear here after your first captioned meeting.'}
+                    </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               ) : (
-                <ScrollArea className="min-h-0 flex-1">
-                  <ol className="flex flex-col gap-1.5">
-                    {history.map((entry) => (
-                      <li key={entry.id}>
-                        <button
-                          type="button"
-                          onClick={() => void openHistoryEntry(entry)}
-                          className="flex w-full min-h-11 cursor-pointer flex-col gap-0.5 rounded-md border border-border bg-background px-2.5 py-2 text-left outline-none transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <span className="truncate text-sm font-semibold">{entry.title}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(entry.startedAt).toLocaleString()} {formatDuration(entry.durationMs)} {entry.segmentCount} lines
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ol>
-                </ScrollArea>
+                <>
+                  <div className="flex shrink-0 items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant={selectMode ? 'secondary' : 'ghost'}
+                        size="sm"
+                        onClick={() => {
+                          setSelectMode((mode) => !mode);
+                          setSelectedIds([]);
+                          setConfirmingDelete(false);
+                        }}
+                        aria-pressed={selectMode}
+                      >
+                        Select
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowArchived((value) => !value)}
+                        aria-pressed={showArchived}
+                      >
+                        {showArchived ? 'History' : 'Archived'}
+                      </Button>
+                    </div>
+                    {selectMode && (
+                      <div className="flex items-center gap-1.5">
+                        <Button variant="ghost" size="sm" onClick={() => setSelectedIds(history.map((entry) => entry.id))}>
+                          All
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => { setSelectedIds([]); setConfirmingDelete(false); }}>
+                          Clear
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  {selectMode && selectedIds.length > 0 && (
+                    <div className="flex shrink-0 flex-wrap items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1.5" role="toolbar" aria-label="Bulk actions">
+                      <span className="text-xs font-semibold">{selectedIds.length} selected</span>
+                      <Button variant="outline" size="sm" onClick={() => void archiveSelected(!showArchived)}>
+                        {showArchived ? 'Restore' : 'Archive'}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => void downloadSelectedZip()}>
+                        Download ZIP
+                      </Button>
+                      {(() => {
+                        const blocksLive = selectedIds.some((id) => activeSessions.some((session) => session.meetingId === id));
+                        if (confirmingDelete) {
+                          return (
+                            <>
+                              <span className="text-xs">Delete {selectedIds.length} meeting(s)? Transcripts are removed permanently.</span>
+                              <Button variant="destructive" size="sm" disabled={blocksLive} onClick={() => void deleteSelected()}>
+                                Delete
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => setConfirmingDelete(false)}>
+                                Cancel
+                              </Button>
+                            </>
+                          );
+                        }
+                        return (
+                          <Button variant="outline" size="sm" disabled={blocksLive} onClick={() => setConfirmingDelete(true)} aria-label={blocksLive ? 'Delete disabled while a selected meeting is active' : 'Delete selected meetings'}>
+                            Delete
+                          </Button>
+                        );
+                      })()}
+                    </div>
+                  )}
+                  <ScrollArea className="min-h-0 flex-1">
+                    <ol className="flex flex-col gap-1.5">
+                      {history.map((entry) => (
+                        <li key={entry.id} className="flex items-start gap-2">
+                          {selectMode && (
+                            <Checkbox
+                              checked={selectedIds.includes(entry.id)}
+                              onCheckedChange={(checked) => toggleSelect(entry.id, checked === true)}
+                              aria-label={`Select ${entry.title}`}
+                              className="mt-2.5"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void openHistoryEntry(entry)}
+                            className="flex w-full min-h-11 min-w-0 flex-1 cursor-pointer flex-col gap-0.5 rounded-md border border-border bg-background px-2.5 py-2 text-left outline-none transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <span className="truncate text-sm font-semibold">{entry.title}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(entry.startedAt).toLocaleString()} {formatDuration(entry.durationMs)} {entry.segmentCount} lines
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ol>
+                  </ScrollArea>
+                </>
               )}
             </section>
           </TabsPanel>

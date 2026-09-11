@@ -1,4 +1,4 @@
-import { storeGet, storeGetAll, storePut } from './db';
+import { storeDelete, storeGet, storeGetAll, storePut } from './db';
 import { listSegments } from './segments';
 import type { TranscriptSegment } from '../transcript/types';
 
@@ -19,6 +19,28 @@ export interface MeetingSession {
   endedAt?: number;
   durationMs?: number;
   createdAt: number;
+  archivedAt?: number;
+}
+
+export async function setMeetingArchived(id: string, archivedAt: number | null): Promise<MeetingSession | null> {
+  const meeting = await storeGet<MeetingSession>('meetings', id).catch(() => null);
+  if (!meeting) return null;
+  const next = { ...meeting };
+  if (archivedAt === null) {
+    delete next.archivedAt;
+  } else {
+    next.archivedAt = archivedAt;
+  }
+  await storePut('meetings', next);
+  return next;
+}
+
+export async function deleteMeeting(id: string): Promise<void> {
+  const segments = await import('./segments').then((mod) => mod.listSegments(id)).catch(() => []);
+  for (const segment of segments) {
+    await storeDelete('segments', segment.id).catch(() => undefined);
+  }
+  await storeDelete('meetings', id).catch(() => undefined);
 }
 
 export async function updateMeetingMetadata(
@@ -122,7 +144,7 @@ export async function getMeeting(id: string): Promise<MeetingSession | null> {
   return storeGet<MeetingSession>('meetings', id).catch(() => null);
 }
 
-export async function listMeetings(): Promise<MeetingHistoryEntry[]> {
+export async function listMeetings(options: { includeArchived?: boolean } = {}): Promise<MeetingHistoryEntry[]> {
   const [meetings, segments] = await Promise.all([
     storeGetAll<MeetingSession>('meetings').catch(() => []),
     storeGetAll<{ meetingId: string }>('segments').catch(() => []),
@@ -132,6 +154,7 @@ export async function listMeetings(): Promise<MeetingHistoryEntry[]> {
     counts.set(segment.meetingId, (counts.get(segment.meetingId) ?? 0) + 1);
   }
   return meetings
+    .filter((meeting) => options.includeArchived === true || meeting.archivedAt === undefined)
     .map((meeting) => ({ ...meeting, segmentCount: counts.get(meeting.id) ?? 0 }))
     .sort((a, b) => b.startedAt - a.startedAt);
 }

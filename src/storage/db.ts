@@ -104,6 +104,10 @@ export function storeGetAll<T>(store: 'meetings' | 'segments' | 'settings'): Pro
   );
 }
 
+export function storeDelete(store: 'meetings' | 'segments' | 'settings', key: string): Promise<void> {
+  return transact<void>(store, 'readwrite', (objectStore) => objectStore.delete(key)).then(() => undefined);
+}
+
 export function storeGetAllByIndex<T>(
   store: 'segments',
   index: 'by-meeting',
