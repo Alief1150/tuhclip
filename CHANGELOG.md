@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0] - 2026-09-10
+
+### Fixed
+- Decoupled side-panel transcript updates from the active Chrome tab
+- Stabilized the Meet content connection with ping, healing, and idempotent startup
+- Made caption state accurate with CC control reading and waiting-for-speech status
+- Removed stale runtime sessions when Meet tabs close or navigate away
+- Prevented provisional meetings from becoming permanent history
+- Upgraded meeting titles with Meet-code fallback and participant names
+- Resolved You and Anda to the local participant name when safe
+
+### Added
+- GitHub Star header action with cached star count
+- Motion hover animation on the tuhclip wordmark
+- Lenis smooth scrolling on the transcript viewport
+- History multi-select with archive, restore, bulk delete, and ZIP download
+
 ## [0.3.4] - 2026-09-07
 
 ### Fixed
