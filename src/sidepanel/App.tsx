@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DownloadIcon } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import { toJSON } from '../export/json';
 import { toMarkdown } from '../export/markdown';
 import { toText } from '../export/text';
@@ -21,6 +22,8 @@ import { Separator } from '../ui/separator';
 import { Spinner } from '../ui/spinner';
 import { Tabs, TabsList, TabsPanel, TabsTab } from '../ui/tabs';
 import { ToastProvider, toastManager } from '../ui/toast';
+import { StarButton } from './StarButton';
+import { useLenisViewport } from './useLenis';
 
 const logger = createLogger('ui');
 
@@ -110,6 +113,22 @@ function StatusBadge({ state }: { state: 'transcribing' | 'background' | 'waitin
   );
 }
 
+function BrandWordmark() {
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.span
+      className="font-heading inline-block text-base font-bold tracking-tight"
+      whileHover={reduceMotion ? undefined : { rotate: [0, -4, 3, 0], scale: 1.06, x: [0, -1, 1, 0] }}
+      whileFocus={reduceMotion ? undefined : { rotate: [0, -4, 3, 0], scale: 1.06 }}
+      transition={{ duration: 0.4, ease: 'easeInOut' }}
+      tabIndex={0}
+      aria-label="tuhclip"
+    >
+      tuhclip
+    </motion.span>
+  );
+}
+
 function ExportMenu({ label, onExport }: { label: string; onExport: (format: 'txt' | 'md' | 'json') => void }) {
   return (
     <Menu>
@@ -147,13 +166,17 @@ export function App() {
   meetingRef.current = meeting;
   const followTracker = useRef(new FollowTracker());
   const liveViewport = useRef<HTMLDivElement | null>(null);
+  const liveLenis = useLenisViewport<HTMLDivElement>();
   const [follow, setFollow] = useState<FollowState>({ following: true, unseen: 0 });
 
+  const setLiveViewport = useCallback((element: HTMLDivElement | null) => {
+    liveViewport.current = element;
+    liveLenis.ref(element);
+  }, [liveLenis]);
+
   const scrollLiveToBottom = useCallback((smooth: boolean) => {
-    const viewport = liveViewport.current;
-    if (!viewport) return;
-    viewport.scrollTo({ top: viewport.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
-  }, []);
+    liveLenis.scrollToBottom(smooth);
+  }, [liveLenis]);
 
   const handleLiveScroll = useCallback((viewport: HTMLDivElement) => {
     const id = meetingRef.current?.id;
@@ -428,9 +451,9 @@ export function App() {
         <header className="flex shrink-0 items-center justify-between rounded-lg border bg-background px-3 py-2 shadow-xs">
           <div className="flex items-center gap-2">
             <img src="/paperclip.png" alt="" className="size-6 object-contain" />
-            <span className="font-heading text-base font-bold tracking-tight">tuhclip</span>
+            <BrandWordmark />
           </div>
-          <Badge variant="outline" size="sm">local only</Badge>
+          <StarButton />
         </header>
 
         <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-2">
@@ -554,7 +577,7 @@ export function App() {
                 <div className="relative flex min-h-0 flex-1 flex-col">
                   <ScrollArea
                     className="min-h-0 flex-1"
-                    viewportRef={liveViewport}
+                    viewportRef={setLiveViewport}
                     onViewportScroll={handleLiveScroll}
                   >
                     <ol className="flex flex-col">
@@ -664,7 +687,7 @@ export function App() {
         </Tabs>
 
         <footer className="flex shrink-0 items-center justify-between px-1 text-xs text-muted-foreground">
-          <span>tuhclip</span>
+          <span>tuhclip · local only</span>
           <span>Google Meet</span>
         </footer>
       </main>
