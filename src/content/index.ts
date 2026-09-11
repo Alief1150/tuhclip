@@ -1,7 +1,7 @@
 import { isRuntimeMessage, type RuntimeMessage } from '../shared/messages';
 import { claimContentOwnership, extractMeetCode } from '../background/contentHealth';
 import { readCaptionControlState } from '../platforms/googleMeet/captionControl';
-import { resolveMeetingMetadata, resolveSpeakerName } from '../platforms/googleMeet/meetingMetadata';
+import { isSelfSpeakerAlias, resolveMeetingMetadata, resolveSpeakerName } from '../platforms/googleMeet/meetingMetadata';
 import { createCaptionObserver } from '../platforms/googleMeet/captionObserver';
 import type { MeetStateSignal } from '../platforms/googleMeet/types';
 import { CAPTION_OFF_GRACE_MS } from '../shared/constants';
@@ -175,6 +175,10 @@ async function init(): Promise<void> {
     onObservation: (observation) => {
       announceMeeting();
       const resolved = resolveSpeakerName(observation.speaker, localName);
+      if (resolved && !isSelfSpeakerAlias(resolved) && resolved !== 'Unknown speaker' && sentTitleQuality < 2) {
+        sentTitleQuality = 2;
+        safeSend({ type: 'METADATA_UPDATE', payload: { meetingId, title: resolved, quality: 2 } });
+      }
       const normalized = resolved === null ? observation : { ...observation, speaker: resolved };
       const hadActive = engine.active !== null;
       engine.ingest(normalized);

@@ -30,10 +30,16 @@ export function resolveMeetingMetadata(doc: MetadataDocument, meetCode: string):
   return { title, quality: title ? titleQualityFor(title, meetCode) : 0, localName };
 }
 
+export const SELF_SPEAKER_ALIASES = new Set(['you', 'anda']);
+
+export function isSelfSpeakerAlias(label: string): boolean {
+  return SELF_SPEAKER_ALIASES.has(label.trim().toLocaleLowerCase());
+}
+
 export function resolveSpeakerName(speakerLabel: string | null, localName: string | null): string | null {
   if (!speakerLabel) return null;
   const label = speakerLabel.trim();
-  if (label.toLocaleLowerCase() === 'you' && localName?.trim()) return localName.trim();
+  if (isSelfSpeakerAlias(label) && localName?.trim()) return localName.trim();
   return label || null;
 }
 

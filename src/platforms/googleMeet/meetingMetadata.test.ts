@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isSelfSpeakerAlias,
   resolveMeetingMetadata,
   resolveSpeakerName,
   shouldUpgradeTitle,
@@ -33,6 +34,12 @@ describe('meetingMetadata', () => {
     expect(resolveMeetingMetadata(doc('Google Meet - Google Meet', null), 'abc-defg-hij').title).toBeNull();
   });
 
+  it('recognizes localized self aliases extensibly', () => {
+    expect(isSelfSpeakerAlias('You')).toBe(true);
+    expect(isSelfSpeakerAlias('ANDA')).toBe(true);
+    expect(isSelfSpeakerAlias('Mahdi')).toBe(false);
+  });
+
   it('ranks title quality from generic to code fallback to real title', () => {
     expect(titleQualityFor('', 'abc-defg-hij')).toBe(0);
     expect(titleQualityFor('Google Meet', 'abc-defg-hij')).toBe(0);
@@ -50,7 +57,10 @@ describe('meetingMetadata', () => {
   it('resolves You to the local name only with real DOM evidence', () => {
     expect(resolveSpeakerName('You', 'Alief Athallah')).toBe('Alief Athallah');
     expect(resolveSpeakerName('you', 'Alief Athallah')).toBe('Alief Athallah');
+    expect(resolveSpeakerName('Anda', 'Alief Athallah')).toBe('Alief Athallah');
+    expect(resolveSpeakerName('anda', 'Alief Athallah')).toBe('Alief Athallah');
     expect(resolveSpeakerName('You', null)).toBe('You');
+    expect(resolveSpeakerName('Anda', null)).toBe('Anda');
     expect(resolveSpeakerName('Mahdi', 'Alief Athallah')).toBe('Mahdi');
     expect(resolveSpeakerName(null, 'Alief Athallah')).toBeNull();
   });
